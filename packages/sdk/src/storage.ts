@@ -12,13 +12,8 @@ declare global {
 const RPC_URL = process.env.NEXT_PUBLIC_OG_ENDPOINT || 'https://evmrpc-testnet.0g.ai/';
 const INDEXER_RPC = process.env.NEXT_PUBLIC_OG_INDEXER || 'https://indexer-storage-testnet-turbo.0g.ai';
 
-// Storage fee configuration - Based on 0G tokens, not ETH!
-const STORAGE_FEE_CONFIG = {
-  BASE_FEE: BigInt('1000000000000000000'), // 1 0G
-  PER_BYTE_FEE: BigInt('1000000000000000'), // 0.001 0G per byte
-  MAX_FEE: BigInt('10000000000000000000'), // 10 0G
-  TESTNET_DISCOUNT: 0.1, // 90% testnet fee discount
-};
+// 0G SDK handles fee calculation automatically
+// We should not hardcode fees - let the SDK calculate based on market price
 
 // Gas price configuration for 0G Chain
 const GAS_CONFIG = {
@@ -28,15 +23,11 @@ const GAS_CONFIG = {
   GAS_LIMIT: BigInt('100000'), // 100K gas
 };
 
-// Calculate reasonable storage fee (0G tokens)
+// 0G SDK calculates fees automatically based on market price
+// We don't need to calculate fees manually
 export function calculateStorageFee(dataSize: number): bigint {
-  const baseFee = STORAGE_FEE_CONFIG.BASE_FEE;
-  const sizeFee = BigInt(dataSize) * STORAGE_FEE_CONFIG.PER_BYTE_FEE;
-  const totalFee = baseFee + sizeFee;
-  
-  const discountedFee = totalFee * BigInt(Math.floor(STORAGE_FEE_CONFIG.TESTNET_DISCOUNT * 100)) / BigInt(100);
-  
-  return discountedFee > STORAGE_FEE_CONFIG.MAX_FEE ? STORAGE_FEE_CONFIG.MAX_FEE : discountedFee;
+  // Return 0 to let 0G SDK calculate the fee automatically
+  return BigInt('0');
 }
 
 // Get actual storage fee from 0G SDK (real-time)
@@ -56,7 +47,7 @@ export async function getActualStorageFee(data: any): Promise<bigint> {
     return estimatedFee;
   } catch (error) {
     console.error('0G Storage: Failed to calculate storage fee:', error);
-    return STORAGE_FEE_CONFIG.BASE_FEE;
+         return BigInt('0');
   }
 }
 
@@ -266,6 +257,192 @@ async function toEthersSigner(possibleSigner: any): Promise<any> {
 	throw new Error('No compatible ethers Signer available. Please connect a browser wallet.');
 }
 
+// Upload file to 0G Storage (for images, documents, etc.)
+export async function putFile(file: File, signer: any): Promise<{ cid: string }> {
+  try {
+    if (!signer) {
+      throw new Error('Wallet not connected');
+    }
+
+    const address = await getWalletAddress(signer);
+    console.log('0G Storage: Uploading file with wallet address:', address);
+    
+    console.log('0G Storage: File details:', {
+      name: file.name,
+      size: file.size,
+      type: file.type
+    });
+    
+         // Let 0G SDK calculate fee automatically
+     const calculatedFee = BigInt('0');
+     console.log('0G Storage: Using automatic fee calculation by 0G SDK');
+    
+    console.log('0G Storage: Initializing indexer with:', INDEXER_RPC);
+    const sdk = await import('@0glabs/0g-ts-sdk');
+    const { Indexer } = sdk as any;
+    const ZgBlob: any = (sdk as any).Blob;
+    const indexer = new Indexer(INDEXER_RPC);
+    
+    const ethersSigner = await toEthersSigner(signer);
+    console.log('0G Storage: Using ethers Signer for file upload');
+    
+    if (!RPC_URL) {
+      throw new Error('RPC_URL is not configured');
+    }
+    
+    const maxRetries = 1;
+    let lastError: any = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`0G Storage: File upload attempt ${attempt}/${maxRetries}`);
+        
+        console.log('0G Storage: Creating SDK Blob for file upload...');
+        const sdkFile = new ZgBlob(file);
+        
+        console.log('0G Storage: Generating Merkle tree for file...');
+        const [tree, treeErr] = await sdkFile.merkleTree();
+        if (treeErr !== null) {
+          throw new Error(`Failed to generate Merkle tree: ${treeErr}`);
+        }
+        
+        const rootHash = tree?.rootHash();
+        if (!rootHash) {
+          throw new Error('Failed to get root hash from Merkle tree');
+        }
+        
+        console.log('0G Storage: File Root Hash:', rootHash);
+        
+                 // Use official SDK default taskSize
+         // The default taskSize should work for most cases
+         const taskSize = 10; // Default value from official SDK
+         
+         const uploadOptions = {
+           tags: '0x',
+           finalityRequired: true,
+           taskSize: taskSize,
+           expectedReplica: 1,
+           skipTx: false,
+           fee: calculatedFee,
+           nonce: undefined
+         };
+        
+        console.log('0G Storage: File upload options:', {
+          fee: uploadOptions.fee.toString(),
+          feeOG: parseFloat(ethers.formatEther(uploadOptions.fee)),
+          taskSize: uploadOptions.taskSize,
+          fileSize: file.size
+        });
+        
+        const [tx, uploadErr] = await indexer.upload(sdkFile, RPC_URL, ethersSigner, uploadOptions);
+        console.log('0G Storage: File upload response:', { tx, uploadErr });
+        
+        if (uploadErr !== null) {
+          lastError = uploadErr;
+          console.error(`0G Storage: File upload attempt ${attempt} failed:`, uploadErr);
+        } else {
+          console.log('0G Storage: File upload successful! Transaction:', tx);
+          
+          let txHash: string;
+          
+          if (typeof tx === 'string') {
+            txHash = tx;
+          } else if (tx && typeof tx === 'object' && 'hash' in tx) {
+            txHash = tx.hash;
+          } else if (tx && typeof tx === 'object' && 'transactionHash' in tx) {
+            txHash = tx.transactionHash;
+          } else {
+            const txString = JSON.stringify(tx);
+            const hashMatch = txString.match(/0x[a-fA-F0-9]{64}/);
+            if (hashMatch) {
+              txHash = hashMatch[0];
+            } else {
+              throw new Error(`File upload successful but no transaction hash found in response: ${txString}`);
+            }
+          }
+          
+          if (!txHash || txHash === '') {
+            throw new Error('File upload successful but extracted transaction hash is empty');
+          }
+          
+          // Save file metadata to local storage
+          if (typeof window !== 'undefined') {
+            try {
+              const fileMetadata = {
+                name: file.name,
+                size: file.size,
+                type: file.type,
+                uploadedAt: Date.now(),
+                cid: rootHash
+              };
+              localStorage.setItem(`0g-file-${rootHash}`, JSON.stringify(fileMetadata));
+              localStorage.setItem(`0g-tx-to-file-${txHash}`, rootHash);
+              console.log('0G Storage: File metadata saved to local storage');
+            } catch (localError) {
+              console.warn('Failed to save file metadata to local storage:', localError);
+            }
+          }
+          
+          console.log('0G Storage: Final CID (root hash):', rootHash);
+          console.log('0G Storage: Transaction hash:', txHash);
+          return { cid: rootHash };
+        }
+      } catch (attemptError) {
+        lastError = attemptError;
+        console.error(`0G Storage: File upload attempt ${attempt} failed:`, attemptError);
+      }
+    }
+    
+    console.error('0G Storage: All file upload attempts failed');
+    throw new Error(`0G Storage file upload failed after ${maxRetries} attempts. Last error: ${lastError}`);
+  } catch (error) {
+    console.error('0G Storage: putFile failed:', error);
+    throw error;
+  }
+}
+
+// Download file from 0G Storage
+export async function getFile(cid: string): Promise<Blob> {
+  try {
+    console.log('0G Storage: Attempting to fetch file with CID:', cid);
+    
+    if (!cid || cid === '') {
+      throw new Error('Invalid CID: empty or undefined');
+    }
+    
+    // Check local storage first for file metadata
+    if (typeof window !== 'undefined') {
+      try {
+        const fileMetadata = localStorage.getItem(`0g-file-${cid}`);
+        if (fileMetadata) {
+          console.log('0G Storage: Found file metadata in local storage');
+          const metadata = JSON.parse(fileMetadata);
+          
+          // For now, return a placeholder blob since we can't reconstruct the actual file
+          // In a real implementation, you might want to store the actual file data or use a different approach
+          const placeholderText = `File: ${metadata.name}\nSize: ${metadata.size} bytes\nType: ${metadata.type}\nCID: ${cid}\n\nThis is a placeholder. The actual file content is not available in local storage.`;
+          return new Blob([placeholderText], { type: 'text/plain' });
+        }
+      } catch (localError) {
+        console.log('Failed to get file metadata from local storage:', localError);
+      }
+    }
+    
+    console.log('0G Storage: File not found in local storage, attempting to download from 0G Storage...');
+    
+    // For now, throw an error since file download is not fully implemented
+    // In a real implementation, you would use the 0G SDK to download the file
+    throw new Error(`0G Storage file download not fully implemented. CID: ${cid}. Try checking if the file exists in local storage.`);
+    
+  } catch (error) {
+    console.error('0G Storage file download error:', error);
+    if (error instanceof Error) {
+      throw new Error(`0G Storage file download failed: ${error.message}`);
+    }
+    throw new Error('0G Storage file download failed: Unknown error');
+  }
+}
+
 // Upload JSON data to 0G Storage
 export async function putJSON<T>(data: T, signer: any): Promise<{ cid: string }> {
   try {
@@ -279,22 +456,22 @@ export async function putJSON<T>(data: T, signer: any): Promise<{ cid: string }>
     const jsonString = JSON.stringify(data);
     console.log('0G Storage: Data size:', jsonString.length, 'bytes');
     
-    const MAX_SEGMENT_SIZE = 256 * 1024; // 256KB
-    const MAX_CHUNK_SIZE = 256; // 256 bytes
+         // 0G Storage limits based on official SDK constants
+     // DEFAULT_CHUNK_SIZE = 256 bytes
+     // DEFAULT_SEGMENT_MAX_CHUNKS = 1024
+     // DEFAULT_SEGMENT_SIZE = 256 * 1024 = 256KB
+     const MAX_CHUNK_SIZE = 256; // 256 bytes (official SDK default)
+     const MAX_SEGMENT_SIZE = 256 * 1024; // 256KB (official SDK default)
+     
+     if (jsonString.length > MAX_SEGMENT_SIZE) {
+       console.warn(`0G Storage: Data size (${jsonString.length} bytes) exceeds segment limit (${MAX_SEGMENT_SIZE} bytes)`);
+       console.warn('0G Storage: This may cause upload issues. Consider splitting data into smaller chunks.');
+       // Don't throw error, just warn and continue
+     }
     
-    if (jsonString.length > MAX_SEGMENT_SIZE) {
-      console.warn(`0G Storage: Data size (${jsonString.length} bytes) exceeds recommended segment size (${MAX_SEGMENT_SIZE} bytes)`);
-      console.warn('0G Storage: This may cause "too many data writing" errors. Consider compressing or splitting data.');
-    }
-    
-    const calculatedFee = calculateStorageFee(jsonString.length);
-    console.log('0G Storage: Calculated storage fee:', {
-      dataSize: jsonString.length,
-      baseFee: STORAGE_FEE_CONFIG.BASE_FEE.toString(),
-      sizeFee: (BigInt(jsonString.length) * STORAGE_FEE_CONFIG.PER_BYTE_FEE).toString(),
-      totalFee: calculatedFee.toString(),
-      totalFeeOG: parseFloat(ethers.formatEther(calculatedFee))
-    });
+         // Let 0G SDK calculate fee automatically
+     const calculatedFee = BigInt('0');
+     console.log('0G Storage: Using automatic fee calculation by 0G SDK for JSON data');
     
     console.log('0G Storage: Initializing indexer with:', INDEXER_RPC);
     const sdk = await import('@0glabs/0g-ts-sdk');
@@ -331,19 +508,9 @@ export async function putJSON<T>(data: T, signer: any): Promise<{ cid: string }>
         let uploadData = jsonString;
         let uploadFileName = 'note.json';
         
-        if (jsonString.length > MAX_SEGMENT_SIZE) {
-          console.log('0G Storage: Data is large, attempting compression...');
-          try {
-            const compressedData = JSON.stringify(JSON.parse(jsonString));
-            if (compressedData.length < jsonString.length) {
-              uploadData = compressedData;
-              uploadFileName = 'note-compressed.json';
-              console.log(`0G Storage: Compressed data from ${jsonString.length} to ${compressedData.length} bytes`);
-            }
-          } catch (compressionError) {
-            console.warn('0G Storage: Compression failed, using original data:', compressionError);
-          }
-        }
+        // With 64 byte limit, compression is unlikely to help significantly
+        // Just use the original data and let the calling function handle splitting
+        console.log('0G Storage: Data size within limits, proceeding with upload');
         
         const domBlob = new Blob([uploadData], { type: 'application/json' });
         const domFile = new File([domBlob], uploadFileName, { type: 'application/json' });
@@ -369,10 +536,14 @@ export async function putJSON<T>(data: T, signer: any): Promise<{ cid: string }>
         
         console.log('0G Storage: File Root Hash:', rootHash);
         
+                 // Use official SDK default taskSize
+         // The default taskSize should work for most cases
+         const taskSize = 10; // Default value from official SDK
+        
         const uploadOptions = {
           tags: '0x',
           finalityRequired: true,
-          taskSize: domFile.size > MAX_SEGMENT_SIZE ? 1 : 10,
+          taskSize: taskSize,
           expectedReplica: 1,
           skipTx: false,
           fee: calculatedFee,

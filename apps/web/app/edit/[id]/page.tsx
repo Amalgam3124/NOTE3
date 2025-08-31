@@ -1,18 +1,19 @@
 'use client';
 
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { useAccount, useWalletClient } from 'wagmi';
 import ReactMarkdown from 'react-markdown';
-import LoadingSpinner from '../../src/components/LoadingSpinner';
-import PageLoadingSpinner from '../../src/components/PageLoadingSpinner';
-import OptimizedImage from '../../src/components/OptimizedImage';
-import InlineImageManager from '../../src/components/InlineImageManager';
-import MarkdownPreview from '../../src/components/MarkdownPreview';
-// Remove static type import to avoid SSR issues
-// import type { Note } from '@onchain-notes/types';
+import LoadingSpinner from '../../../src/components/LoadingSpinner';
+import PageLoadingSpinner from '../../../src/components/PageLoadingSpinner';
+import OptimizedImage from '../../../src/components/OptimizedImage';
+import InlineImageManager from '../../../src/components/InlineImageManager';
+import MarkdownPreview from '../../../src/components/MarkdownPreview';
+import { findById } from '../../../src/lib/note';
+import { getNote } from '../../../src/lib/0g-storage';
+// Remove static type imports to avoid SSR issues
 
-// Extended Note type with CID - Define locally to avoid SSR issues
+// Define types locally to avoid SSR issues
 type Note = {
   id: string;
   title: string;
@@ -23,56 +24,104 @@ type Note = {
   author: string;
   category?: string;
   tags?: string[];
+  version?: number;
+  parentId?: string;
+  editHistory?: string[];
 };
 
-type NoteWithCID = Note & { cid?: string };
+type NoteIndexItem = {
+  id: string;
+  title: string;
+  cid: string;
+  createdAt: number;
+  updatedAt?: number;
+  public?: boolean;
+  category?: string;
+  tags?: string[];
+  version?: number;
+  parentId?: string;
+  hasImages?: boolean;
+};
 
-export default function NewNotePage() {
+interface EditNotePageProps {
+  params: {
+    id: string;
+  };
+}
+
+export default function EditNotePage({ params }: EditNotePageProps) {
   const router = useRouter();
-  const { isConnected } = useAccount();
+  const { isConnected, address } = useAccount();
   const { data: walletClient } = useWalletClient();
-
+  
+  const [originalNote, setOriginalNote] = useState<Note | null>(null);
+  const [indexItem, setIndexItem] = useState<NoteIndexItem | null>(null);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [selectedImages, setSelectedImages] = useState<File[]>([]);
+  const [existingImages, setExistingImages] = useState<string[]>([]);
   const [inlineImages, setInlineImages] = useState<{ markdown: string; file: File }[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState('');
-  const [isPageLoading, setIsPageLoading] = useState(true);
   const [categories, setCategories] = useState<string[]>([]);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
 
-  // Page loading state
+  // Load original note data
   useEffect(() => {
-    // Simulate page loading process
-    const timer = setTimeout(() => {
-      setIsPageLoading(false);
-    }, 2000); // Hide loading state after 2 seconds
-
-    return () => clearTimeout(timer);
-  }, []);
-
-  // Load categories
-  useEffect(() => {
-    const loadCategories = async () => {
+    const loadNoteData = async () => {
       try {
-        const { getCategories } = await import('../../src/lib/note');
-        const cats = getCategories();
-        setCategories(cats);
-      } catch (error) {
-        console.error('Failed to load categories:', error);
+        setIsLoading(true);
+        setError('');
+
+        // Find note in local index
+        const foundIndex = findById(params.id);
+        if (!foundIndex) {
+          setError('Note not found');
+          return;
+        }
+
+        setIndexItem(foundIndex);
+
+        // Load note content from 0G Storage
+        const noteData = await getNote(foundIndex.cid);
+        setOriginalNote(noteData);
+
+        // Pre-fill form with existing data
+        setTitle(noteData.title);
+        setContent(noteData.markdown);
+        setCategory((noteData as any).category || '');
+        setTags((noteData as any).tags || []);
+        setExistingImages(noteData.images || []);
+
+        // Load categories
+        try {
+          const { getCategories } = await import('../../../src/lib/note');
+          const cats = getCategories();
+          setCategories(cats);
+        } catch (error) {
+          console.error('Failed to load categories:', error);
+        }
+
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load note');
+      } finally {
+        setIsLoading(false);
       }
     };
-    
+
     if (isConnected) {
-      loadCategories();
+      loadNoteData();
     }
-  }, [isConnected]);
+  }, [params.id, isConnected]);
+
+  // Check if user is the author
+  const isAuthor = originalNote?.author === address;
 
   // Use useCallback to optimize functions
   const handleSave = useCallback(async () => {
@@ -86,35 +135,33 @@ export default function NewNotePage() {
       return;
     }
 
+    if (!isAuthor) {
+      setError('You can only edit your own notes');
+      return;
+    }
+
     setIsSaving(true);
     setError('');
 
     try {
-      // Process inline images: upload to 0G Storage and replace local URLs with CIDs
-      console.log('🔍 handleSave: inlineImages state:', inlineImages.length, 'items');
-      console.log('🔍 handleSave: inlineImages details:', inlineImages);
-      
       let finalContent = content;
-      let processedInlineImages: Array<{ markdown: string; file: File }> = [];
       
+      // Process inline images: upload to 0G Storage and replace local URLs with CIDs
       if (inlineImages.length > 0) {
-        console.log('🔍 Processing inline images...');
-        const { processInlineImages } = await import('../../src/lib/inline-image-uploader');
+        console.log('Processing inline images...');
+        const { processInlineImages } = await import('../../../src/lib/inline-image-uploader');
         
         try {
           finalContent = await processInlineImages(finalContent, inlineImages, walletClient);
-          processedInlineImages = inlineImages; // Pass the original inline images for tracking
-          console.log('🔍 Inline images processed successfully');
+          console.log('Inline images processed successfully');
         } catch (error) {
-          console.error('❌ Failed to process inline images:', error);
+          console.error('Failed to process inline images:', error);
           throw new Error(`Failed to process inline images: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
-      } else {
-        console.log('🔍 No inline images to process');
       }
       
       // Dynamically import the saveNote function to avoid SSR issues
-      const { saveNote } = await import('../../src/lib/0g-storage');
+      const { saveNote } = await import('../../../src/lib/0g-storage');
       
       const { note } = await saveNote(
         title.trim(), 
@@ -124,18 +171,19 @@ export default function NewNotePage() {
           category: category.trim() || undefined,
           tags: tags.length > 0 ? tags : undefined,
           images: selectedImages.length > 0 ? selectedImages : undefined,
-          inlineImages: processedInlineImages,
+          isEdit: true,
+          originalId: params.id,
         }
       );
       
       // Add new category if it's new
       if (category.trim() && !categories.includes(category.trim())) {
-        const { addCategory } = await import('../../src/lib/note');
+        const { addCategory } = await import('../../../src/lib/note');
         addCategory(category.trim());
-        setCategories(prev => [...prev, category.trim()]);
       }
       
-      router.push(`/note/${note.id}`);
+      // Navigate to the updated note
+      router.push(`/note/${params.id}`);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to save note';
       
@@ -148,7 +196,7 @@ export default function NewNotePage() {
     } finally {
       setIsSaving(false);
     }
-  }, [title, content, category, tags, selectedImages, inlineImages, isConnected, walletClient, router, categories]);
+  }, [title, content, category, tags, selectedImages, inlineImages, isConnected, walletClient, router, categories, isAuthor, params.id]);
 
   // Use useCallback to optimize input handling
   const handleTitleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -212,18 +260,11 @@ export default function NewNotePage() {
 
   // Handle inline image insertion
   const handleInlineImageInsert = useCallback((markdownSyntax: string, localFile?: File) => {
-    console.log('🔍 handleInlineImageInsert called with:', { markdownSyntax, localFile });
-    
     const target = document.getElementById('content') as HTMLTextAreaElement;
-    if (!target) {
-      console.error('❌ Content textarea not found');
-      return;
-    }
+    if (!target) return;
     
     const start = target.selectionStart;
     const end = target.selectionEnd;
-    
-    console.log('🔍 Cursor position:', { start, end });
     
     // Insert image markdown at cursor position
     const newContent = content.substring(0, start) + markdownSyntax + content.substring(end);
@@ -231,14 +272,7 @@ export default function NewNotePage() {
     
     // Store the local file for later upload
     if (localFile) {
-      console.log('🔍 Storing local file for upload:', localFile.name, localFile.size);
-      setInlineImages(prev => {
-        const newInlineImages = [...prev, { markdown: markdownSyntax, file: localFile }];
-        console.log('🔍 Updated inlineImages state:', newInlineImages.length, 'items');
-        return newInlineImages;
-      });
-    } else {
-      console.warn('⚠️ No local file provided for inline image');
+      setInlineImages(prev => [...prev, { markdown: markdownSyntax, file: localFile }]);
     }
     
     // Set cursor position to after the inserted image
@@ -300,12 +334,32 @@ export default function NewNotePage() {
   }, [content]);
 
   // If page is still loading, show loading state
-  if (isPageLoading) {
+  if (isLoading) {
     return (
       <PageLoadingSpinner 
-        message="Preparing Markdown Editor" 
+        message="Loading Note for Editing" 
         isCompiling={true}
       />
+    );
+  }
+
+  // Check if user is authorized to edit
+  if (!isAuthor) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold text-gray-900">Access Denied</h1>
+          <button
+            onClick={handleBack}
+            className="text-gray-600 hover:text-gray-800"
+          >
+            ← Back
+          </button>
+        </div>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-red-800">You can only edit your own notes.</p>
+        </div>
+      </div>
     );
   }
 
@@ -314,14 +368,14 @@ export default function NewNotePage() {
       {/* Loading state during saving */}
       {isSaving && (
         <LoadingSpinner 
-          message="Saving to 0G Storage" 
+          message="Updating Note in 0G Storage" 
           showProgress={true}
         />
       )}
 
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-gray-900">New Note</h1>
+          <h1 className="text-3xl font-bold text-gray-900">Edit Note</h1>
           <button
             onClick={handleBack}
             className="text-gray-600 hover:text-gray-800"
@@ -333,7 +387,7 @@ export default function NewNotePage() {
         {!isConnected && (
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
             <p className="text-yellow-800">
-              Please connect your wallet to create notes.
+              Please connect your wallet to edit notes.
             </p>
           </div>
         )}
@@ -423,10 +477,37 @@ export default function NewNotePage() {
           </div>
         </div>
 
-        {/* Cover Images (Optional) */}
+        {/* Existing Images */}
+        {existingImages.length > 0 && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Existing Images
+            </label>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                             {existingImages.map((imageCid, index) => (
+                 <div key={index} className="relative group">
+                   <OptimizedImage
+                     src={`https://gateway.0g.ai/ipfs/${imageCid}`}
+                     alt={`Existing Image ${index + 1}`}
+                     width={96}
+                     height={96}
+                     className="w-full h-24 object-cover rounded-lg border border-gray-200"
+                     fallbackSrc="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjIwMCIgdmlld0JveD0iMCAwIDIwMCAyMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIiBmaWxsPSIjRjNGNEY2Ii8+CjxwYXRoIGQ9Ik02MCAxMDBDNjAgODguOTU0MyA2OC45NTQzIDgwIDgwIDgwQzkxLjA0NTcgODAgMTAwIDg4Ljk1NDMgMTAwIDEwMEMxMDAgMTExLjA0NiA5MS4wNDU3IDEyMCA4MCAxMjBDNjguOTU0MyAxMjAgNjAgMTExLjA0NiA2MCAxMDBaIiBmaWxsPSIjOUI5QkEwIi8+CjxwYXRoIGQ9Ik0xMDAgMTQwTDEyMCAxMjBMMTQwIDE0MEgxMDBaIiBmaWxsPSIjOUI5QkEwIi8+CjxwYXRoIGQ9Ik02MCAxNDBMMTgwIDE0MEg2MFoiIGZpbGw9IiM5QjlCQTAiLz4KPC9zdmc+"
+                   />
+                   <p className="text-xs text-gray-500 mt-1 truncate font-mono">{imageCid.slice(0, 10)}...</p>
+                 </div>
+               ))}
+            </div>
+            <p className="text-sm text-gray-600 mt-2">
+              💡 These images are already uploaded. You can reference them in your content using <code className="bg-gray-100 px-1 rounded">![alt]({existingImages[0]})</code>
+            </p>
+          </div>
+        )}
+
+                {/* New Cover Images */}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            Cover Images (Optional)
+            Add New Cover Images
           </label>
           <p className="text-sm text-gray-600 mb-3">
             These images will be displayed as attachments/cover images for your note.
@@ -439,7 +520,7 @@ export default function NewNotePage() {
           >
             <div className="space-y-4">
               <div className="text-gray-600">
-                <p className="text-lg">📷 Drag and drop cover images here</p>
+                <p className="text-lg">📷 Drag and drop new cover images here</p>
                 <p className="text-sm">or</p>
                 <button
                   type="button"
@@ -469,7 +550,7 @@ export default function NewNotePage() {
           {/* Selected images preview */}
           {selectedImages.length > 0 && (
             <div className="mt-4">
-              <h4 className="text-sm font-medium text-gray-700 mb-2">Selected Cover Images:</h4>
+              <h4 className="text-sm font-medium text-gray-700 mb-2">New Cover Images to Upload:</h4>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 {selectedImages.map((file, index) => (
                   <div key={index} className="relative group">
@@ -498,7 +579,7 @@ export default function NewNotePage() {
         {/* Inline Image Manager */}
         <InlineImageManager
           onImageInsert={handleInlineImageInsert}
-          existingImages={selectedImages.map(file => URL.createObjectURL(file))}
+          existingImages={[...existingImages, ...selectedImages.map(file => URL.createObjectURL(file))]}
           isConnected={isConnected}
         />
 
@@ -518,7 +599,7 @@ export default function NewNotePage() {
                 value={content}
                 onChange={handleContentChange}
                 onKeyDown={handleContentKeyDown}
-                placeholder="Start typing your Markdown content here... Use ![alt](image-cid) to reference uploaded images"
+                placeholder="Edit your Markdown content here... Use ![alt](image-cid) to reference images"
                 className="w-full min-h-[500px] px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white resize-none font-mono text-sm"
                 style={{
                   lineHeight: '1.6',
@@ -529,15 +610,12 @@ export default function NewNotePage() {
               
               {/* Edit hint */}
               <div className="text-xs text-gray-500">
-                <p>💡 <strong>Markdown Syntax Support:</strong></p>
+                <p>💡 <strong>Editing Tips:</strong></p>
                 <ul className="list-disc list-inside ml-4 space-y-1">
-                  <li><code className="bg-gray-100 px-1 rounded">#</code> Headings</li>
-                  <li><code className="bg-gray-100 px-1 rounded">**Bold**</code> and <code className="bg-gray-100 px-1 rounded">*Italic*</code></li>
-                  <li><code className="bg-gray-100 px-1 rounded">[Link](URL)</code> and <code className="bg-gray-100 px-1 rounded">![Image](URL)</code></li>
-                  <li><code className="bg-gray-100 px-1 rounded">- List item</code> and <code className="bg-gray-100 px-1 rounded">1. Ordered list</code></li>
-                  <li><code className="bg-gray-100 px-1 rounded">`Code`</code> and <code className="bg-gray-100 px-1 rounded">```Code block```</code></li>
-                  <li><code className="bg-gray-100 px-1 rounded">Tab</code> key support</li>
-                  <li><code className="bg-gray-100 px-1 rounded">![alt](image-cid)</code> for uploaded images</li>
+                  <li>Reference existing images: <code className="bg-gray-100 px-1 rounded">![alt]({existingImages[0] || 'image-cid'})</code></li>
+                  <li>New images will be uploaded and their CIDs will be available</li>
+                  <li>All Markdown syntax is supported</li>
+                  <li>Tab key support for indentation</li>
                 </ul>
               </div>
             </div>
@@ -545,28 +623,16 @@ export default function NewNotePage() {
                          {/* Right: Real-time preview */}
              <div className="space-y-2">
                <div className="text-sm text-gray-600 mb-2">👁️ Live Preview</div>
-               <div className="w-full min-h-[500px] px-3 py-2 border border-gray-300 rounded-lg bg-white overflow-y-auto">
+               <div className="w-full min-h-[500px] px-3 py-2 border border-gray-2 rounded-lg bg-white overflow-y-auto">
                  {content.trim() ? (
                    <MarkdownPreview content={content} />
                  ) : (
                    <div className="text-gray-400 text-center py-8">
-                     <p>Start typing in the left panel to see live preview here</p>
+                     <p>Edit content in the left panel to see live preview here</p>
                      <p className="text-sm mt-2">Supports Markdown syntax and inline images</p>
                    </div>
                  )}
                </div>
-              
-              {/* Preview hint */}
-              <div className="text-xs text-gray-500">
-                <p>✨ <strong>Real-time Preview Features:</strong></p>
-                <ul className="list-disc list-inside ml-4 space-y-1">
-                  <li>Left panel input, right panel live rendering</li>
-                  <li>Supports all standard Markdown syntax</li>
-                  <li>Image support with CID references</li>
-                  <li>What You See Is What You Get editing experience</li>
-                  <li>Tab key input support</li>
-                </ul>
-              </div>
             </div>
           </div>
         </div>
@@ -602,7 +668,7 @@ export default function NewNotePage() {
                 : ''
             }
           >
-            {isSaving ? 'Saving...' : 'Save Note'}
+            {isSaving ? 'Updating...' : 'Update Note'}
           </button>
         </div>
       </div>

@@ -3,6 +3,29 @@ const nextConfig = {
   experimental: {
     esmExternals: 'loose',
   },
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'gateway.0g.ai',
+        port: '',
+        pathname: '/ipfs/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'ipfs.io',
+        port: '',
+        pathname: '/ipfs/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'dweb.link',
+        port: '',
+        pathname: '/ipfs/**',
+      },
+    ],
+    unoptimized: true, 
+  },
   webpack: (config, { isServer }) => {
     if (!isServer) {
       // Handle Node.js modules for client-side
