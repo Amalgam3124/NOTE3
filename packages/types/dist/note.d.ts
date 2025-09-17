@@ -84,6 +84,7 @@ export type INFTIntelligence = {
     };
     data_sources: string[];
     prompt_template?: string;
+    is_encrypted?: boolean;
 };
 export type INFTConversionRequest = {
     note_id: string;

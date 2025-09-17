@@ -95,6 +95,7 @@ export type INFTIntelligence = {
   };
   data_sources: string[]; // CIDs of data sources
   prompt_template?: string;
+  is_encrypted?: boolean; // Whether the intelligence config is encrypted
 };
 
 export type INFTConversionRequest = {

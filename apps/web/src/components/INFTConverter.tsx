@@ -394,7 +394,7 @@ export default function INFTConverter({ note, onConversionComplete, onError }: I
                 {summary ? (
                   <p className="text-sm text-gray-700">{summary}</p>
                 ) : (
-                  <p className="text-sm text-gray-500 italic">No summary available. Click "Generate Summary" to create one.</p>
+                  <p className="text-sm text-gray-500 italic">No summary available. Click &quot;Generate Summary&quot; to create one.</p>
                 )}
               </div>
             </div>
