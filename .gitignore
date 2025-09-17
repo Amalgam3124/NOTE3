@@ -13,7 +13,6 @@ apps/web/.next/
 
 # Production
 /build
-/dist
 
 # Misc
 .DS_Store
@@ -54,7 +53,6 @@ packages/sdk/deployment-info.json
 packages/sdk/typechain-types/
 
 # Build outputs
-packages/*/dist/
 packages/*/build/
 packages/*/out/
 
@@ -108,7 +106,7 @@ jspm_packages/
 
 # Nuxt.js build / generate output
 .nuxt
-dist
+
 
 # Gatsby files
 .cache/
