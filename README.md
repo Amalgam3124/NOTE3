@@ -32,6 +32,14 @@ A decentralized note-taking application built on 0G Storage, featuring blockchai
 - **Statistics Dashboard**: View counts of total notes, images, categories, and tags
 - **Grid/List Views**: Toggle between different note display modes
 
+#### 4. 🧠 Intelligent NFTs (INFTs)
+- **ERC-7857 Standard**: Convert notes to Intelligent NFTs based on ERC-7857 standard
+- **AI Capabilities**: Generate summaries and Q&A pairs for your notes
+- **Smart Contracts**: Deploy and interact with Note3 INFT contracts on 0G Chain
+- **Intelligence Configuration**: Customize AI capabilities, model versions, and compute requirements
+- **Metadata Management**: Rich metadata including intelligence features and note references
+- **INFT Management**: View, manage, and interact with your owned INFTs
+
 ## 🚀 Getting Started
 
 ### Prerequisites
@@ -63,6 +71,9 @@ A decentralized note-taking application built on 0G Storage, featuring blockchai
    NEXT_PUBLIC_OG_ENDPOINT=https://evmrpc-testnet.0g.ai/
    NEXT_PUBLIC_OG_INDEXER=https://indexer-storage-testnet-turbo.0g.ai
    NEXT_PUBLIC_OG_GATEWAY=https://gateway.0g.ai/ipfs/
+   NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID=your_walletconnect_project_id
+   NEXT_PUBLIC_INFT_CONTRACT_ADDRESS=0x52e82FeB652a67246eaB8Bd2Eb6cFe078C29b45f
+   NEXT_PUBLIC_VERIFIER_CONTRACT_ADDRESS=0x1b55eb84F3F8b741D062Fa7aeE68a363884b4bd1
    ```
 
 4. **Get testnet tokens**
@@ -159,6 +170,112 @@ A decentralized note-taking application built on 0G Storage, featuring blockchai
    - See image CIDs for reference
    - Images are displayed with fallback placeholders if loading fails
 
+### INFT Management
+
+1. **Converting Notes to INFTs**
+   - Navigate to any note you own
+   - Click "Convert to INFT" button
+   - Configure intelligence settings (capabilities, model version, etc.)
+   - Deploy the INFT to 0G Chain
+
+2. **Managing INFTs**
+   - View all your INFTs on the "My INFTs" page
+   - Generate AI summaries for your INFTs
+   - Add Q&A pairs to enhance intelligence
+   - View detailed metadata and intelligence configuration
+
+3. **Intelligence Features**
+   - **Summary Generation**: AI-powered summaries of note content
+   - **Q&A Pairs**: Add question-answer pairs for better understanding
+   - **Custom Configuration**: Set memory requirements, compute units, and data sources
+   - **Metadata Integration**: Rich metadata with intelligence capabilities
+
+## 📁 Project Structure
+
+```
+NOTE3/
+├── apps/
+│   └── web/                          # Next.js frontend application
+│       ├── app/                      # App Router pages
+│       │   ├── api/                  # API routes
+│       │   ├── edit/[id]/           # Note editing pages
+│       │   ├── infts/               # INFT management pages
+│       │   ├── new/                 # New note creation
+│       │   ├── note/[id]/           # Note viewing pages
+│       │   ├── globals.css          # Global styles
+│       │   ├── layout.tsx           # Root layout
+│       │   └── page.tsx             # Homepage
+│       ├── src/
+│       │   ├── components/          # React components
+│       │   │   ├── INFTConverter.tsx    # INFT conversion UI
+│       │   │   ├── INFTManager.tsx      # INFT management UI
+│       │   │   ├── MarkdownPreview.tsx  # Markdown rendering
+│       │   │   ├── NavBar.tsx           # Navigation bar
+│       │   │   └── ...                 # Other components
+│       │   └── lib/                 # Utility libraries
+│       │       ├── 0g-storage.ts    # 0G Storage integration
+│       │       ├── config.ts        # Configuration
+│       │       ├── image-storage.ts # Image handling
+│       │       └── note.ts          # Note management
+│       ├── package.json
+│       ├── next.config.js
+│       └── tailwind.config.js
+├── packages/
+│   ├── sdk/                         # SDK package
+│   │   ├── src/
+│   │   │   ├── contracts/           # Smart contracts
+│   │   │   │   ├── interfaces/      # ERC-7857 interfaces
+│   │   │   │   ├── Note3AgentNFT.sol    # Main INFT contract
+│   │   │   │   ├── verifiers/       # Verification contracts
+│   │   │   │   └── proxy/           # Proxy contracts
+│   │   │   ├── inft.ts              # INFT SDK functions
+│   │   │   ├── storage.ts           # Storage utilities
+│   │   │   └── ...                  # Other SDK modules
+│   │   ├── scripts/                 # Deployment scripts
+│   │   ├── hardhat.config.js        # Hardhat configuration
+│   │   └── package.json
+│   └── types/                       # TypeScript type definitions
+│       ├── src/
+│       │   ├── index.ts
+│       │   └── note.ts              # Note and INFT types
+│       └── package.json
+├── .gitignore
+├── package.json                     # Root package.json
+├── pnpm-workspace.yaml             # pnpm workspace config
+├── turbo.json                      # Turbo build config
+└── README.md
+```
+
+## 📋 Deployed Contracts
+
+The following smart contracts have been deployed to the 0G Galileo Testnet:
+
+### Main Contracts
+- **Note3AgentNFT (INFT Contract)**: `0x52e82FeB652a67246eaB8Bd2Eb6cFe078C29b45f`
+  - [View on 0G Explorer](https://chainscan-galileo.0g.ai/address/0x52e82FeB652a67246eaB8Bd2Eb6cFe078C29b45f)
+  - **Standard**: ERC-7857 Intelligent NFT
+  - **Features**: AI capabilities, metadata management, intelligence configuration
+
+- **Note3Verifier (Verification Contract)**: `0x1b55eb84F3F8b741D062Fa7aeE68a363884b4bd1`
+  - [View on 0G Explorer](https://chainscan-galileo.0g.ai/address/0x1b55eb84F3F8b741D062Fa7aeE68a363884b4bd1)
+  - **Purpose**: Proof verification for INFT operations
+  - **Type**: TEE/ZKP verification support
+
+- **Implementation Contract**: `0xd08bd2c7Ef5D3D5E87162D2Da99412c4306D6e37`
+  - [View on 0G Explorer](https://chainscan-galileo.0g.ai/address/0xd08bd2c7Ef5D3D5E87162D2Da99412c4306D6e37)
+  - **Purpose**: Upgradeable implementation logic
+  - **Pattern**: UUPS Proxy pattern
+
+### Network Information
+- **Network**: 0G Galileo Testnet
+- **Chain ID**: 16601
+- **RPC URL**: https://evmrpc-testnet.0g.ai/
+- **Explorer**: https://chainscan-galileo.0g.ai/
+- **Deployed**: September 17, 2025
+
+### Contract Verification
+All contracts are verified on the 0G Explorer and can be interacted with using the provided addresses. The contracts implement the ERC-7857 standard for Intelligent NFTs and include full upgradeability support.
+
 ## 🔧 Technical Details
 
 ### Architecture
@@ -167,12 +284,17 @@ A decentralized note-taking application built on 0G Storage, featuring blockchai
 - **Wallet Integration**: Wagmi + Viem
 - **Storage**: 0G Storage (0G Chain)
 - **State Management**: React hooks + localStorage
+- **Smart Contracts**: Solidity with Hardhat
+- **INFT Standard**: ERC-7857 compliant Intelligent NFTs
+- **Blockchain**: 0G Chain (EVM compatible)
 
 ### Data Flow
 1. **Note Creation**: User input → Local validation → 0G Storage upload → Local index update
 2. **Note Retrieval**: Local index lookup → 0G Storage download → UI rendering
 3. **Note Editing**: Original note load → User modifications → New version upload → Index update
 4. **Image Handling**: File upload → 0G Storage → CID generation → Note reference
+5. **INFT Conversion**: Note selection → Intelligence config → Smart contract deployment → INFT minting
+6. **INFT Management**: Contract interaction → AI feature execution → Metadata updates → UI rendering
 
 ### Storage Structure
 ```
@@ -186,6 +308,12 @@ Local Storage:
 ├── Note objects (JSON)
 ├── Image files (binary)
 └── Merkle tree roots (CIDs)
+
+Blockchain (0G Chain):
+├── Note3AgentNFT contract (ERC-7857)
+├── Note3Verifier contract (proof verification)
+├── INFT tokens (with intelligence metadata)
+└── Smart contract state (ownership, metadata)
 ```
 
 ## 💡 Tips & Best Practices
@@ -245,6 +373,12 @@ Local Storage:
 - **Export Options**: Download notes in various formats
 - **Mobile App**: Native mobile application
 - **API Access**: Programmatic access to notes and data
+- **Advanced AI Features**: Translation, sentiment analysis, content generation
+- **INFT Marketplace**: Trade and exchange Intelligent NFTs
+- **Cross-chain Support**: Deploy INFTs on multiple blockchains
+- **AI Model Integration**: Connect with various AI models and services
+- **INFT Analytics**: Track usage and performance metrics
+- **Automated Intelligence**: Auto-generate summaries and Q&A pairs
 
 ## 📄 License
 

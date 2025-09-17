@@ -193,14 +193,10 @@ export default function HomePage() {
 
       {/* Statistics */}
       {notes.length > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
             <div className="text-2xl font-bold text-blue-600">{stats.totalNotes}</div>
             <div className="text-sm text-blue-800">Total Notes</div>
-          </div>
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
-            <div className="text-2xl font-bold text-green-600">{stats.notesWithImages}</div>
-            <div className="text-sm text-green-800">With Images</div>
           </div>
           <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
             <div className="text-2xl font-bold text-purple-600">{stats.notesWithCategories}</div>

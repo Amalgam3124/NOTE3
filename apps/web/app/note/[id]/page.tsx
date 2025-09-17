@@ -7,6 +7,12 @@ import { useAccount } from 'wagmi';
 import LoadingSpinner from '../../../src/components/LoadingSpinner';
 import PageLoadingSpinner from '../../../src/components/PageLoadingSpinner';
 import OptimizedImage from '../../../src/components/OptimizedImage';
+import dynamic from 'next/dynamic';
+
+const INFTConverter = dynamic(() => import('../../../src/components/INFTConverter'), {
+  ssr: false,
+  loading: () => <LoadingSpinner />
+});
 import { findById } from '../../../src/lib/note';
 import { getNote, getNoteHistory } from '../../../src/lib/0g-storage';
 // Remove static type imports to avoid SSR issues
@@ -18,9 +24,10 @@ type Note = {
   title: string;
   markdown: string;
   images: string[];
+  inlineImages: any[]; // Add missing inlineImages property
   public: boolean;
   createdAt: number;
-  author: string;
+  author: `0x${string}`; // Fix author type to match the expected type
   category?: string;
   tags?: string[];
   version?: number;
@@ -56,6 +63,7 @@ export default function NotePage({ params }: NotePageProps) {
   const [error, setError] = useState('');
   const [showHistory, setShowHistory] = useState(false);
   const [editHistory, setEditHistory] = useState<Note[]>([]);
+  const [showINFTConverter, setShowINFTConverter] = useState(false);
 
   useEffect(() => {
     const loadNoteData = async () => {
@@ -168,6 +176,21 @@ export default function NotePage({ params }: NotePageProps) {
     setShowHistory(!showHistory);
   };
 
+  const handleShowINFTConverter = () => {
+    setShowINFTConverter(!showINFTConverter);
+  };
+
+  const handleINFTConversionComplete = (result: any) => {
+    console.log('INFT conversion completed:', result);
+    setShowINFTConverter(false);
+    // You could show a success message here
+  };
+
+  const handleINFTError = (error: string) => {
+    console.error('INFT conversion error:', error);
+    setError(error);
+  };
+
   const isAuthor = note?.author === address;
 
   if (isLoading) {
@@ -211,12 +234,20 @@ export default function NotePage({ params }: NotePageProps) {
         <h1 className="text-3xl font-bold text-gray-900">{note.title}</h1>
         <div className="flex items-center space-x-4">
           {isAuthor && (
-            <button
-              onClick={handleEdit}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Edit Note
-            </button>
+            <>
+              <button
+                onClick={handleEdit}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Edit Note
+              </button>
+              <button
+                onClick={handleShowINFTConverter}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+              >
+                🤖 Convert to INFT
+              </button>
+            </>
           )}
           <button
             onClick={() => router.back()}
@@ -308,6 +339,15 @@ export default function NotePage({ params }: NotePageProps) {
             </div>
           )}
         </div>
+      )}
+
+      {/* INFT Converter */}
+      {showINFTConverter && note && (
+        <INFTConverter
+          note={note}
+          onConversionComplete={handleINFTConversionComplete}
+          onError={handleINFTError}
+        />
       )}
 
       {/* Note metadata */}

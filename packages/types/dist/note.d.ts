@@ -58,4 +58,56 @@ export type ImageUpload = {
 export type NoteWithImages = Note & {
     imageDetails?: ImageUpload[];
 };
+export type INFTMetadata = {
+    name: string;
+    description: string;
+    image?: string;
+    external_url?: string;
+    attributes: INFTAttribute[];
+    intelligence: INFTIntelligence;
+    created_at: number;
+    author: `0x${string}`;
+    note_id: string;
+    note_cid: string;
+};
+export type INFTAttribute = {
+    trait_type: string;
+    value: string | number | boolean;
+    display_type?: 'string' | 'number' | 'date' | 'boost_number' | 'boost_percentage';
+};
+export type INFTIntelligence = {
+    capabilities: string[];
+    model_version: string;
+    compute_requirements: {
+        memory: number;
+        compute_units: number;
+    };
+    data_sources: string[];
+    prompt_template?: string;
+};
+export type INFTConversionRequest = {
+    note_id: string;
+    note_cid: string;
+    intelligence_config: INFTIntelligence;
+    metadata_overrides?: Partial<INFTMetadata>;
+};
+export type INFTConversionResult = {
+    inft_token_id: string;
+    inft_contract_address: `0x${string}`;
+    metadata_uri: string;
+    transaction_hash: `0x${string}`;
+    gas_used: number;
+    conversion_timestamp: number;
+};
+export type INFTInfo = {
+    token_id: string;
+    contract_address: `0x${string}`;
+    metadata: INFTMetadata;
+    owner: `0x${string}`;
+    created_at: number;
+    note_reference: {
+        note_id: string;
+        note_cid: string;
+    };
+};
 //# sourceMappingURL=note.d.ts.map
