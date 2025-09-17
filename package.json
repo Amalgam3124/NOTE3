@@ -17,6 +17,6 @@
   },
   "packageManager": "pnpm@8.15.0",
   "pnpm": {
-    "neverBuiltDependencies": ["@onchain-notes/sdk", "@onchain-notes/types"]
+    "neverBuiltDependencies": []
   }
 }
