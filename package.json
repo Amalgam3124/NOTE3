@@ -1,0 +1,22 @@
+{
+  "name": "onchain-notes",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm -C apps/web dev",
+    "build": "turbo build",
+    "build:vercel": "node build-vercel.js",
+    "build:web": "pnpm -C apps/web build",
+    "typecheck": "turbo typecheck",
+    "lint": "turbo lint",
+    "clean": "turbo clean"
+  },
+  "devDependencies": {
+    "turbo": "^1.12.4",
+    "typescript": "^5.3.3"
+  },
+  "packageManager": "pnpm@8.15.0",
+  "pnpm": {
+    "neverBuiltDependencies": []
+  }
+}

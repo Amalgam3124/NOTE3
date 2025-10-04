@@ -1,0 +1,32 @@
+{
+  "name": "@onchain-notes/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "compile": "hardhat compile",
+    "deploy": "hardhat run scripts/deploy-note3-agent-nft.js --network 0g-testnet",
+    "deploy:local": "hardhat run scripts/deploy-note3-agent-nft.js --network hardhat",
+    "deploy:old": "hardhat run scripts/deploy-note3-inft.js --network 0g-testnet",
+    "test": "hardhat test",
+    "verify": "hardhat verify --network 0g-testnet"
+  },
+  "dependencies": {
+    "@0glabs/0g-ts-sdk": "^0.3.1",
+    "@onchain-notes/types": "workspace:*",
+    "@openzeppelin/contracts": "^5.4.0",
+    "@openzeppelin/contracts-upgradeable": "^5.4.0",
+    "ethers": "6.13.1"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@types/node": "^20.11.0",
+    "chai": "^4.2.0",
+    "dotenv": "^16.4.5",
+    "hardhat": "^2.22.0",
+    "typescript": "^5.3.3"
+  }
+}
