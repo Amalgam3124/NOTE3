@@ -1,6 +1,9 @@
 // Complete 0G Storage implementation
 // Access 0G Storage functionality through SDK package
 
+import { createPublicClient, http } from 'viem';
+import { OG_CONFIG } from './config';
+
 // Define types locally to avoid SSR issues
 type Note = {
   id: string;
@@ -27,6 +30,30 @@ type ImageUpload = {
 
 // Extended Note type with CID
 type NoteWithCID = Note & { cid?: string };
+
+async function ensureOGNetworkAndFunds(signer: any, address: `0x${string}`) {
+  try {
+    const chainId = (signer?.chain?.id) ?? (typeof signer?.getChainId === 'function' ? await signer.getChainId() : undefined);
+    if (typeof window !== 'undefined' && chainId !== 16602 && (window as any).ethereum) {
+      await (window as any).ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: '0x40da' }],
+      });
+      console.log('0G Storage: Switched wallet to 0G Galileo (16602)');
+    }
+  } catch (switchErr) {
+    console.warn('0G Storage: Network switch skipped/failed:', switchErr);
+  }
+
+  // Balance check using public client
+  const client = createPublicClient({ transport: http(OG_CONFIG.RPC_URL) });
+  const balance = await client.getBalance({ address });
+  console.log('0G Storage: Wallet balance (wei):', balance.toString());
+  const minBalanceWei = 1_000_000_000_000_000n; // 0.001 OG
+  if (balance < minBalanceWei) {
+    throw new Error('Insufficient 0G balance (>= 0.001 OG required). Get tokens: https://faucet.0g.ai/');
+  }
+}
 
 // Save note to 0G Storage
 export async function saveNote(
@@ -70,6 +97,9 @@ export async function saveNote(
     }
     
     console.log('0G Storage: Wallet address:', walletAddress);
+
+    // Preflight: ensure correct network & sufficient balance
+    await ensureOGNetworkAndFunds(signer, walletAddress);
     
          // Handle image uploads if provided
      let imageCids: string[] = [];
@@ -78,44 +108,49 @@ export async function saveNote(
      if (options?.images && options.images.length > 0) {
        console.log('0G Storage: Uploading cover images...');
        const { uploadImages } = await import('./image-storage');
-       const uploadResult = await uploadImages(options.images, signer);
-       imageCids = uploadResult.cids;
-       imageDetails = uploadResult.imageDetails;
-       console.log('0G Storage: Cover images uploaded:', imageCids);
-     }
-     
-     // Handle inline images if provided (already processed in the calling function)
-     let inlineImageCids: string[] = [];
-     if (options?.inlineImages && options.inlineImages.length > 0) {
-       console.log('0G Storage: Inline images already processed, storing for reference');
-       // Inline images are already processed and content is updated in the calling function
-       // We just need to store the information for the note
+      const { cids, imageDetails: uploadedImages } = await uploadImages(options.images, signer);
+      imageCids = cids;
+      imageDetails = uploadedImages;
+      console.log('0G Storage: Uploaded images:', imageCids);
+    }
+    
+    // Handle inline images inside markdown if provided
+    if (options?.inlineImages && options.inlineImages.length > 0) {
+      console.log('0G Storage: Uploading inline images...');
+      const { uploadInlineImages } = await import('./inline-image-uploader');
+      const inlineUploads = await uploadInlineImages(options.inlineImages, signer);
+      const inlineDetails: ImageUpload[] = inlineUploads.map(u => ({
+        cid: u.cid,
+        name: 'inline-image',
+        size: 0,
+        type: 'image/*',
+        markdown: `![Image](https://gateway.0g.ai/ipfs/${u.cid})`
+      }));
+      imageDetails = imageDetails.concat(inlineDetails);
+      console.log('0G Storage: Uploaded inline images:', inlineUploads.map(u => u.cid));
      }
     
     // Create note object
     const note: Note = {
-      id: options?.isEdit && options?.originalId 
-        ? options.originalId  // Keep the same ID for edits
-        : `${walletAddress}-${Date.now()}`,
+      id: `note-${Date.now()}`,
       title,
       markdown: content,
       images: imageCids,
-      inlineImages: [], // TODO: Parse markdown content to extract inline images
+      inlineImages: imageDetails,
       public: false,
-      createdAt: options?.isEdit ? Date.now() : Date.now(), // Keep original creation date for edits
+      createdAt: Date.now(),
       author: walletAddress,
       category: options?.category,
       tags: options?.tags,
-      version: options?.isEdit ? undefined : undefined, // No version for edits
-      parentId: undefined, // No parent ID for edits
+      version: 1,
+      parentId: options?.originalId
     };
     
-    console.log('0G Storage: Note object created:', note);
+    // Calculate data size estimate
+    const dataSize = new Blob([JSON.stringify(note)]).size;
     
-    // Calculate estimated fee based on data size
-    const jsonString = JSON.stringify(note);
-    const dataSize = jsonString.length;
-    const estimatedFee = BigInt(Math.ceil(dataSize * 0.000001 * 1e18)); // Rough estimate: 0.000001 0G per byte
+    // Estimate storage fee based on data size (simple heuristic)
+    const estimatedFee = BigInt(Math.ceil(dataSize * 0.000001 * 1e18));
     
     console.log('0G Storage: Estimated storage fee:', {
       dataSize,
@@ -192,8 +227,15 @@ export async function saveNote(
     
     return { note: noteWithCID, estimatedFee };
   } catch (error) {
-    console.error('0G Storage: saveNote failed:', error);
-    throw error;
+    const rawMsg = error instanceof Error ? error.message : String(error);
+    let hint = '';
+    if (rawMsg.includes('-32603') || /Transaction failed/i.test(rawMsg)) {
+      hint = 'Transaction reverted. Check network (ChainId 16602) and wallet balance.';
+    } else if (/insufficient funds/i.test(rawMsg)) {
+      hint = 'Insufficient funds. Visit https://faucet.0g.ai/ to get test tokens.';
+    }
+    console.error('0G Storage: saveNote failed:', rawMsg, hint || '');
+    throw new Error(hint ? `${rawMsg} — ${hint}` : rawMsg);
   }
 }
 
@@ -218,212 +260,85 @@ export async function getNote(cid: string, signer?: any): Promise<Note> {
     if (note.markdown && note.markdown.startsWith('[SPLIT_NOTE:') && note.markdown.endsWith(']')) {
       console.log('0G Storage: Detected split note, reconstructing...');
       const reconstructedNote = await reconstructSplitNote(note, signer);
-      console.log('0G Storage: Note reconstructed successfully');
       return reconstructedNote;
     }
     
     return note;
   } catch (error) {
-    console.error('0G Storage: getNote failed:', error);
+    console.error('0G Storage: Failed to fetch note:', error);
     throw error;
   }
 }
 
-// Function to get note edit history
 export async function getNoteHistory(noteId: string): Promise<Note[]> {
   try {
-    const { findById } = await import('./note');
-    const indexItem = findById(noteId);
-    
-    if (!indexItem || !(indexItem as any).editHistory) {
-      return [];
-    }
-    
-    const history: Note[] = [];
-    for (const cid of (indexItem as any).editHistory) {
-      try {
-        const note = await getNote(cid);
-        history.push(note);
-      } catch (error) {
-        console.warn('Failed to load note from history:', cid, error);
-      }
-    }
-    
-         return history;
-   } catch (error) {
-     console.error('Failed to get note history:', error);
-     return [];
-   }
- }
+    console.log('0G Storage: Fetching note history for ID:', noteId);
 
-/**
- * Split a large note into multiple chunks that fit within 0G Storage's 256KB recommended limit
- */
-async function splitNoteIntoChunks(note: Note, signer: any): Promise<string[]> {
-  try {
-    console.log('0G Storage: Starting note chunking process...');
-    
-    const chunks: string[] = [];
-    const markdown = note.markdown;
-    
-         // Calculate the base size of a chunk without markdown content
-     // Use minimal structure to fit within 64 bytes
-     const baseChunk = {
-       id: `${note.id}-chunk-0`,
-       chunkIndex: 0,
-       isChunk: true,
-       totalChunks: 1,
-       markdown: '' // Empty markdown for base calculation
-     };
-    
-         const baseSize = JSON.stringify(baseChunk).length;
-     // Use a more reasonable chunk size for splitting very large notes
-     // This is just for our fallback chunking, not the official SDK limit
-     const maxMarkdownSize = 64 * 1024 - baseSize; // 64KB - base size
-     
-     console.log('0G Storage: Base chunk size:', baseSize, 'bytes');
-     console.log('0G Storage: Max markdown per chunk:', maxMarkdownSize, 'bytes');
-     
-     if (maxMarkdownSize <= 0) {
-       throw new Error('Base chunk structure too large, cannot create chunks');
-     }
-    
-    // Split markdown into chunks
-    let currentChunk = '';
-    let chunkIndex = 0;
-    
-    for (let i = 0; i < markdown.length; i++) {
-      const char = markdown[i];
-      currentChunk += char;
-      
-      // Check if current chunk would exceed size limit
-      if (currentChunk.length >= maxMarkdownSize) {
-        // Create chunk with current content
-        const chunkNote = {
-          ...baseChunk,
-          id: `${note.id}-chunk-${chunkIndex}`,
-          markdown: currentChunk,
-          chunkIndex: chunkIndex,
-          totalChunks: Math.ceil(markdown.length / maxMarkdownSize)
-        };
-        
-        // Upload chunk to 0G Storage
-        const { putJSON } = await import('@onchain-notes/sdk');
-        const chunkData = JSON.stringify(chunkNote);
-        const result = await putJSON(chunkData, signer);
-        
-        if (!result.success) {
-          throw new Error(result.error || 'Failed to upload chunk to 0G Storage');
+    // Try to load history from localStorage if present
+    if (typeof window !== 'undefined') {
+      const key = `note-history-${noteId}`;
+      const stored = localStorage.getItem(key);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          console.log('0G Storage: Loaded note history from localStorage:', parsed.length);
+          return parsed as Note[];
         }
-        
-        const { cid } = result;
-        
-        chunks.push(cid || '');
-        console.log(`0G Storage: Chunk ${chunkIndex} uploaded with CID: ${cid}, size: ${currentChunk.length} chars`);
-        
-        chunkIndex++;
-        currentChunk = ''; // Start new chunk
       }
     }
-    
-    // Upload the last chunk if it has content
-    if (currentChunk.length > 0) {
-      const chunkNote = {
-        ...baseChunk,
-        id: `${note.id}-chunk-${chunkIndex}`,
-        markdown: currentChunk,
-        chunkIndex: chunkIndex,
-        totalChunks: chunkIndex + 1
-      };
-      
-      const { putJSON } = await import('@onchain-notes/sdk');
-      const chunkData = JSON.stringify(chunkNote);
-      const result = await putJSON(chunkData, signer);
-      
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to upload final chunk to 0G Storage');
-      }
-      
-      const { cid } = result;
-      
-      chunks.push(cid || '');
-      console.log(`0G Storage: Final chunk ${chunkIndex} uploaded with CID: ${cid}, size: ${currentChunk.length} chars`);
-    }
-    
-    console.log('0G Storage: Note successfully split into', chunks.length, 'chunks');
-    return chunks;
-    
+
+    console.log('0G Storage: No history found, returning empty list');
+    return [];
   } catch (error) {
-    console.error('0G Storage: Failed to split note into chunks:', error);
-    throw new Error(`Failed to split note into chunks: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error('0G Storage: Failed to fetch note history:', error);
+    return [];
   }
 }
 
-/**
- * Reconstruct a split note by fetching all its chunks and combining them
- */
-async function reconstructSplitNote(splitNote: Note, signer?: any): Promise<Note> {
-  try {
-    console.log('0G Storage: Starting note reconstruction...');
-    
-    // Extract chunk CIDs from the markdown field
-    const chunkCidsMatch = splitNote.markdown.match(/\[SPLIT_NOTE:(.+)\]/);
-    if (!chunkCidsMatch) {
-      throw new Error('Invalid split note format');
-    }
-    
-    const chunkCids = chunkCidsMatch[1].split(',').filter(cid => cid.trim());
-    console.log('0G Storage: Found', chunkCids.length, 'chunks to reconstruct');
-    
-    if (chunkCids.length === 0) {
-      throw new Error('No chunk CIDs found in split note');
-    }
-    
-    // Fetch all chunks and sort them by chunk index
-    const chunks: Array<{ chunkIndex: number; markdown: string }> = [];
-    const { getJSON } = await import('@onchain-notes/sdk');
-    
-    for (const chunkCid of chunkCids) {
-      try {
-        const chunkResult = await getJSON(chunkCid, signer);
-        if (chunkResult.success && chunkResult.data) {
-          const chunk = chunkResult.data;
-          if (chunk.isChunk && typeof chunk.chunkIndex === 'number') {
-            chunks.push({
-              chunkIndex: chunk.chunkIndex,
-              markdown: chunk.markdown
-            });
-          }
-        }
-      } catch (error) {
-        console.warn('0G Storage: Failed to fetch chunk', chunkCid, error);
-      }
-    }
-    
-    // Sort chunks by index to maintain correct order
-    chunks.sort((a, b) => a.chunkIndex - b.chunkIndex);
-    
-    if (chunks.length === 0) {
-      throw new Error('Failed to fetch any chunks');
-    }
-    
-    // Reconstruct the original markdown content
-    const reconstructedMarkdown = chunks.map(chunk => chunk.markdown).join('');
-    
-    console.log('0G Storage: Reconstructed markdown length:', reconstructedMarkdown.length);
-    
-    // Create the reconstructed note
-    const reconstructedNote: Note = {
-      ...splitNote,
-      markdown: reconstructedMarkdown,
-      // Remove chunk-related fields
-      inlineImages: splitNote.inlineImages.filter(img => !img.cid.startsWith('0x')) // Filter out chunk CIDs
-    };
-    
-    return reconstructedNote;
-    
-  } catch (error) {
-    console.error('0G Storage: Failed to reconstruct split note:', error);
-    throw new Error(`Failed to reconstruct split note: ${error instanceof Error ? error.message : 'Unknown error'}`);
+async function splitNoteIntoChunks(note: Note, signer: any): Promise<string[]> {
+  console.log('0G Storage: Splitting note into chunks...');
+  const { putFile } = await import('@onchain-notes/sdk');
+  const chunks: string[] = [];
+
+  const encoder = new TextEncoder();
+  const data = encoder.encode(note.markdown);
+
+  const chunkSize = 512 * 1024; // 512KB
+  for (let i = 0; i < data.length; i += chunkSize) {
+    const chunk = data.slice(i, i + chunkSize);
+    const blob = new Blob([chunk], { type: 'application/octet-stream' });
+
+    const file = new File([blob], `note-chunk-${i / chunkSize}.bin`, {
+      type: 'application/octet-stream'
+    });
+
+    const { cid } = await putFile(file, signer);
+    chunks.push(cid);
   }
+
+  return chunks;
+}
+
+async function reconstructSplitNote(splitNote: Note, signer?: any): Promise<Note> {
+  console.log('0G Storage: Reconstructing split note...');
+
+  const content = splitNote.markdown;
+  const matches = content.match(/^\[SPLIT_NOTE:(.+)\]$/);
+  if (!matches) return splitNote;
+
+  const cids = matches[1].split(',');
+  const { getJSON } = await import('@onchain-notes/sdk');
+
+  const decoder = new TextDecoder();
+  let combined = '';
+
+  for (const cid of cids) {
+    const result = await getJSON(cid, signer);
+    if (!result.success || !result.data) continue;
+
+    const chunkText = typeof result.data === 'string' ? result.data : JSON.stringify(result.data);
+    combined += chunkText;
+  }
+
+  return { ...splitNote, markdown: combined };
 }

@@ -74,6 +74,10 @@ A decentralized note-taking application built on 0G Storage, featuring blockchai
    NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID=your_walletconnect_project_id
    NEXT_PUBLIC_INFT_CONTRACT_ADDRESS=0x378Eb988f4cD091dC78ec16DD7fD173b29dD8D04
    NEXT_PUBLIC_VERIFIER_CONTRACT_ADDRESS=0x24819618d4D08Cb8FB674a029355cf8b08Dcc9bd
+   
+   # 0G Compute (Broker) Configuration
+   # Provider address to acknowledge (re-verify) for client-side broker
+   NEXT_PUBLIC_OG_COMPUTE_PROVIDER_ADDRESS=0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3
    ```
    
    **Important**: Make sure to update your wallet configuration with the new testnet details:

@@ -2,6 +2,8 @@
 
 import { useState, useCallback } from 'react';
 import { useAccount, useWalletClient } from 'wagmi';
+import { ethers } from 'ethers';
+import { getClientService, getClientBroker } from '@/lib/og-client-broker';
 // Dynamic imports to avoid SSR issues
 // Define types locally to avoid SSR issues
 type Note = {
@@ -54,6 +56,11 @@ type INFTInfo = {
 };
 import LoadingSpinner from './LoadingSpinner';
 
+const formatDate = (timestamp: number) => {
+  const ts = timestamp < 10_000_000_000 ? timestamp * 1000 : timestamp;
+  return new Date(ts).toLocaleString();
+};
+
 interface INFTConverterProps {
   note: Note;
   onConversionComplete?: (result: INFTConversionResult) => void;
@@ -85,6 +92,42 @@ export default function INFTConverter({ note, onConversionComplete, onError }: I
     prompt_template: `You are an AI assistant for analyzing the note "${note.title || note.id}". Please provide helpful summaries and answer questions about the note content.`,
     is_encrypted: false
   });
+  // 0G Compute AI states
+  const [aiSummary, setAiSummary] = useState<string>('');
+  const [isComputeSummarizing, setIsComputeSummarizing] = useState(false);
+  const [isComputeAnswering, setIsComputeAnswering] = useState(false);
+
+  // Ledger state
+  const [ledgerBalance, setLedgerBalance] = useState<bigint | null>(null);
+  const [ledgerAvailable, setLedgerAvailable] = useState<bigint | null>(null);
+  const [ledgerLocked, setLedgerLocked] = useState<bigint | null>(null);
+  const [isCheckingLedger, setIsCheckingLedger] = useState(false);
+  const [depositAmount, setDepositAmount] = useState<string>('10');
+  const [isDepositing, setIsDepositing] = useState(false);
+  const [ledgerNotice, setLedgerNotice] = useState<string>('');
+
+  // Fallback: derive answer locally from summary
+  const deriveAnswerFromSummary = useCallback((question: string, summaryText: string, noteText?: string) => {
+    const text = (summaryText || '').trim();
+    if (!text) return '';
+    const sentences = text.split(/(?<=[。！？.!?])\s+|[\r\n]+/).filter(s => s.trim().length > 0);
+    const words = (question || '').toLowerCase().match(/[a-zA-Z0-9\u4e00-\u9fa5]{2,}/g) || [];
+    const uniq = Array.from(new Set(words));
+    const scored = sentences.map(s => {
+      const lower = s.toLowerCase();
+      let score = 0;
+      for (const w of uniq) {
+        if (lower.includes(w)) score += Math.min(3, (lower.match(new RegExp(w, 'g')) || []).length);
+      }
+      score += Math.min(3, Math.floor(s.length / 80));
+      return { s, score };
+    }).sort((a, b) => b.score - a.score);
+    const top = scored.slice(0, 3).map(x => x.s);
+    if (top.length > 0) {
+      return top.join('\n');
+    }
+    return sentences.slice(0, 2).join('\n');
+  }, []);
 
   const handleConvertToINFT = useCallback(async () => {
     if (!isConnected || !walletClient) {
@@ -168,6 +211,7 @@ export default function INFTConverter({ note, onConversionComplete, onError }: I
       ]);
       setSummary(summaryData);
       setQAPairs(qaData);
+      setAiSummary(''); // reset AI summary when switching INFT
     } catch (error) {
       console.error('Error loading INFT data:', error);
       onError?.('Failed to load INFT data');
@@ -211,6 +255,172 @@ export default function INFTConverter({ note, onConversionComplete, onError }: I
       setIsAddingQA(false);
     }
   }, [selectedINFT, walletClient, newQuestion, newAnswer, onError]);
+
+  // Provider/account sync via server-side proxy to avoid CORS
+  const handleSyncProviderAccount = useCallback(async () => {
+    try {
+      setLedgerNotice('');
+      const DEFAULT_PROVIDER = '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3';
+      const addr = (process.env.NEXT_PUBLIC_OG_COMPUTE_PROVIDER_ADDRESS as string) || DEFAULT_PROVIDER;
+      const { broker, endpoint, model } = await getClientService(addr);
+      setLedgerNotice(`Provider synced. Endpoint: ${endpoint}`);
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      setLedgerNotice(`Sync failed: ${msg}`);
+    }
+  }, []);
+
+  // Ledger helpers
+  const handleCheckLedger = useCallback(async () => {
+    try {
+      setIsCheckingLedger(true);
+      setLedgerNotice('');
+      const broker = await getClientBroker();
+      // ensure ledger exists
+      try {
+        await broker.ledger.addLedger(0);
+      } catch (e: any) {
+        const msg = e?.message || String(e);
+        if (/already exists/i.test(msg)) {
+          // ignore
+        } else {
+          console.warn('创建 Ledger 失败:', msg);
+        }
+      }
+      const account = await broker.ledger.getLedger();
+      const total = account?.totalBalance ?? 0n;
+      const available = account?.availableBalance ?? 0n;
+      const locked = total - available;
+      setLedgerBalance(total);
+      setLedgerAvailable(available);
+      setLedgerLocked(locked);
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      setLedgerNotice(`检查失败: ${msg}`);
+    } finally {
+      setIsCheckingLedger(false);
+    }
+  }, []);
+
+  const handleDeposit = useCallback(async () => {
+    const amountNum = parseFloat(depositAmount || '0');
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      setLedgerNotice('请输入有效的充值数额');
+      return;
+    }
+    try {
+      setIsDepositing(true);
+      setLedgerNotice('');
+      const broker = await getClientBroker();
+      // ensure ledger exists
+      try {
+        await broker.ledger.addLedger(0);
+      } catch (e: any) {
+        const msg = e?.message || String(e);
+        if (/already exists/i.test(msg)) {
+          // ignore
+        } else {
+          console.warn('创建 Ledger 失败:', msg);
+        }
+      }
+      await broker.ledger.depositFund(amountNum);
+      setLedgerNotice(`充值成功: ${amountNum} OG`);
+      await handleCheckLedger();
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      setLedgerNotice(`充值失败: ${msg}`);
+    } finally {
+      setIsDepositing(false);
+    }
+  }, [depositAmount, handleCheckLedger]);
+
+  // 0G Compute actions (use client helper to ensure add-account via server)
+  const handleComputeSummary = useCallback(async () => {
+    try {
+      setIsComputeSummarizing(true);
+      setAiSummary('');
+
+      const DEFAULT_PROVIDER = '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3';
+      const addr = (process.env.NEXT_PUBLIC_OG_COMPUTE_PROVIDER_ADDRESS as string) || DEFAULT_PROVIDER;
+
+      const { broker, endpoint, model } = await getClientService(addr);
+
+      const basePrompt = intelligenceConfig.prompt_template || 'You are an AI assistant. Generate a structured summary with key points and action items.';
+      const messages = [
+        { role: 'user', content: `${basePrompt}\n\n${note.markdown}` }
+      ];
+
+      const headers = await broker.inference.getRequestHeaders(addr, JSON.stringify(messages));
+      const res = await fetch(`${endpoint}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({ model, messages })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        const summaryText = data?.choices?.[0]?.message?.content || '';
+        setAiSummary(summaryText);
+        const chatID = data?.id;
+        try {
+          await broker.inference.processResponse(addr, summaryText, chatID);
+        } catch {
+          // non-verifiable providers may throw; continue
+        }
+      } else {
+        onError?.(data?.error || 'Failed to generate AI summary');
+      }
+    } catch (err) {
+      console.error('AI summary error:', err);
+      onError?.('Failed to generate AI summary');
+    } finally {
+      setIsComputeSummarizing(false);
+    }
+  }, [note.markdown, intelligenceConfig.prompt_template, onError]);
+
+  const handleComputeAnswer = useCallback(async () => {
+    if (!newQuestion.trim()) return;
+    try {
+      setIsComputeAnswering(true);
+
+      const DEFAULT_PROVIDER = '0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3';
+      const addr = (process.env.NEXT_PUBLIC_OG_COMPUTE_PROVIDER_ADDRESS as string) || DEFAULT_PROVIDER;
+
+      const { broker, endpoint, model } = await getClientService(addr);
+
+      const messages = [
+        { role: 'system', content: 'You are an intelligent assistant. Answer accurately, concisely, and with evidence based on the note content. If information is insufficient, say so.' },
+        { role: 'user', content: `Note content:\n\n${note.markdown}\n\nQuestion: ${newQuestion}` }
+      ];
+
+      const headers = await broker.inference.getRequestHeaders(addr, JSON.stringify(messages));
+      const res = await fetch(`${endpoint}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...headers },
+        body: JSON.stringify({ model, messages })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        const answerText = data?.choices?.[0]?.message?.content || '';
+        setNewAnswer(answerText);
+        const chatID = data?.id;
+        try {
+          await broker.inference.processResponse(addr, answerText, chatID);
+        } catch {
+          // non-verifiable providers may throw; continue
+        }
+      } else {
+        console.warn('Compute ask failed:', data?.error);
+        onError?.(data?.error || 'Failed to get AI answer');
+      }
+    } catch (err) {
+      console.error('AI QA error:', err);
+      onError?.('Failed to get AI answer');
+    } finally {
+      setIsComputeAnswering(false);
+    }
+  }, [note.markdown, newQuestion, onError]);
 
   if (!isConnected) {
     return (
@@ -403,7 +613,7 @@ export default function INFTConverter({ note, onConversionComplete, onError }: I
                     </div>
                     <div className="text-right text-xs text-gray-500">
                       <p>Token ID: {inft.token_id}</p>
-                      <p>Created: {new Date(inft.created_at).toLocaleDateString()}</p>
+                      <p>Created: {formatDate(inft.created_at)}</p>
                       <button
                         onClick={() => handleSelectINFT(inft)}
                         className="mt-2 px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs hover:bg-blue-200"
@@ -422,6 +632,64 @@ export default function INFTConverter({ note, onConversionComplete, onError }: I
         {selectedINFT && (
           <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
             <h4 className="font-medium text-blue-900 mb-4">🧠 Intelligence Features for {selectedINFT.metadata.name}</h4>
+
+            {/* Ledger / Credits Section */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-2">
+                <h5 className="font-medium text-gray-900">Compute Credits (0G Ledger)</h5>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSyncProviderAccount}
+                    className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200"
+                  >
+                    Sync Provider
+                  </button>
+                  <button
+                    onClick={handleCheckLedger}
+                    disabled={isCheckingLedger}
+                    className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs hover:bg-gray-200 disabled:bg-gray-200"
+                  >
+                    {isCheckingLedger ? 'Checking...' : 'Check Balance'}
+                  </button>
+                </div>
+              </div>
+              <div className="bg-white border border-gray-200 rounded p-3">
+                <div className="text-xs text-gray-700 grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <div>
+                    <span className="font-medium">Total:</span>
+                    <span className="ml-1">{ledgerBalance !== null ? `${ethers.formatEther(ledgerBalance)} OG` : '-'}</span>
+                  </div>
+                  <div>
+                    <span className="font-medium">Available:</span>
+                    <span className="ml-1">{ledgerAvailable !== null ? `${ethers.formatEther(ledgerAvailable)} OG` : '-'}</span>
+                  </div>
+                  <div>
+                    <span className="font-medium">Locked:</span>
+                    <span className="ml-1">{ledgerLocked !== null ? `${ethers.formatEther(ledgerLocked)} OG` : '-'}</span>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.001}
+                    value={depositAmount}
+                    onChange={(e) => setDepositAmount(e.target.value)}
+                    className="px-2 py-1 border border-gray-300 rounded text-xs w-28"
+                  />
+                  <button
+                    onClick={handleDeposit}
+                    disabled={isDepositing}
+                    className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 disabled:bg-green-400"
+                  >
+                    {isDepositing ? 'Depositing...' : 'Recharge'}
+                  </button>
+                  {ledgerNotice && (
+                    <span className="text-xs text-gray-600 ml-2">{ledgerNotice}</span>
+                  )}
+                </div>
+              </div>
+            </div>
             
             {/* Summary Section */}
             <div className="mb-6">
@@ -441,6 +709,26 @@ export default function INFTConverter({ note, onConversionComplete, onError }: I
                 ) : (
                   <p className="text-sm text-gray-500 italic">No summary available. Click &quot;Generate Summary&quot; to create one.</p>
                 )}
+              </div>
+              {/* 0G Compute Summary */}
+              <div className="mt-3">
+                <div className="flex items-center justify-between mb-2">
+                  <h6 className="text-sm font-medium text-gray-900">0G AI Summary (Off-chain, Verifiable)</h6>
+                  <button
+                    onClick={handleComputeSummary}
+                    disabled={isComputeSummarizing}
+                    className="px-2 py-1 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700 disabled:bg-indigo-400"
+                  >
+                    {isComputeSummarizing ? 'Generating...' : 'Generate with 0G AI'}
+                  </button>
+                </div>
+                <div className="bg-white border border-gray-200 rounded p-3 min-h-[80px]">
+                  {aiSummary ? (
+                    <p className="text-sm text-gray-700">{aiSummary}</p>
+                  ) : (
+                    <p className="text-xs text-gray-500 italic">Click the button above to generate an off-chain AI summary.</p>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -466,13 +754,22 @@ export default function INFTConverter({ note, onConversionComplete, onError }: I
                     className="px-3 py-2 border border-gray-300 rounded text-sm"
                   />
                 </div>
-                <button
-                  onClick={handleAddQA}
-                  disabled={isAddingQA || !newQuestion.trim() || !newAnswer.trim()}
-                  className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:bg-green-400"
-                >
-                  {isAddingQA ? 'Adding...' : 'Add Q&A Pair'}
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleComputeAnswer}
+                    disabled={isComputeAnswering || !newQuestion.trim()}
+                    className="px-3 py-1 bg-indigo-600 text-white rounded text-sm hover:bg-indigo-700 disabled:bg-indigo-400"
+                  >
+                    {isComputeAnswering ? 'Answering...' : 'Answer with 0G AI'}
+                  </button>
+                  <button
+                    onClick={handleAddQA}
+                    disabled={isAddingQA || !newQuestion.trim() || !newAnswer.trim()}
+                    className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:bg-green-400"
+                  >
+                    {isAddingQA ? 'Adding...' : 'Write Q&A on-chain'}
+                  </button>
+                </div>
               </div>
 
               {/* Display Q&A pairs */}

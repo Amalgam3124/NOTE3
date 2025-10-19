@@ -29,6 +29,7 @@ type INFTInfo = {
   created_at: number;
 };
 import LoadingSpinner from './LoadingSpinner';
+import { useRouter } from 'next/navigation';
 
 export default function INFTManager() {
   const { isConnected, address } = useAccount();
@@ -37,6 +38,7 @@ export default function INFTManager() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [isMounted, setIsMounted] = useState(false);
+  const router = useRouter();
 
   // Fix hydration issue
   useEffect(() => {
@@ -74,7 +76,9 @@ export default function INFTManager() {
   }, [isConnected, walletClient, loadOwnedINFTs]);
 
   const formatDate = (timestamp: number) => {
-    return new Date(timestamp).toLocaleString();
+    // Handle both seconds and milliseconds
+    const ts = timestamp < 10_000_000_000 ? timestamp * 1000 : timestamp;
+    return new Date(ts).toLocaleString();
   };
 
   const getCapabilityColor = (capability: string) => {
@@ -290,8 +294,7 @@ export default function INFTManager() {
               <div className="mt-4 flex gap-2">
                 <button
                   onClick={() => {
-                    // TODO: Implement AI interaction
-                    alert('AI interaction features coming soon!');
+                    router.push(`/inft/${inft.token_id}`);
                   }}
                   className="flex-1 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
                 >

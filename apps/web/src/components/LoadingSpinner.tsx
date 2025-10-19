@@ -36,14 +36,14 @@ export default function LoadingSpinner({ message = 'Loading...', showProgress = 
   }, []);
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" role="status" aria-live="polite">
       <div className="bg-white rounded-lg p-8 shadow-xl max-w-md w-full mx-4">
         <div className="text-center">
           {/* Rotating loading icon */}
           <div className="inline-block animate-spin rounded-full h-16 w-16 border-b-2 border-blue-600 mb-4"></div>
           
           {/* Message */}
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">
+          <h3 className="text-lg font-semibold text-gray-900 mb-2" aria-label={message}>
             {message}{dots}
           </h3>
           

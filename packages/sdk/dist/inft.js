@@ -41,87 +41,116 @@ const NOTE3_INFT_ABI = [
 ];
 // Contract address (will be set from environment)
 const INFT_CONTRACT_ADDRESS = '0x378Eb988f4cD091dC78ec16DD7fD173b29dD8D04';
+const OG_RPC_URL = process.env.NEXT_PUBLIC_OG_ENDPOINT || 'https://evmrpc-testnet.0g.ai/';
 // Ensure the contract address is valid
 if (!INFT_CONTRACT_ADDRESS || !INFT_CONTRACT_ADDRESS.startsWith('0x')) {
     throw new Error('Invalid INFT contract address. Please set NEXT_PUBLIC_INFT_CONTRACT_ADDRESS environment variable.');
 }
+// Convert wallet client to ethers signer (browser)
+async function toEthersSigner(signer) {
+    // Already an ethers Signer
+    if (signer && typeof signer.getAddress === 'function' && typeof signer.signTransaction === 'function') {
+        return signer;
+    }
+    // Use BrowserProvider from window.ethereum for wagmi/viem wallet clients
+    if (typeof window !== 'undefined' && window.ethereum) {
+        const provider = new ethers.BrowserProvider(window.ethereum);
+        // Try to switch to 0G Galileo Testnet if needed
+        try {
+            const network = await provider.getNetwork();
+            if (Number(network.chainId) !== 16602) {
+                await window.ethereum.request({
+                    method: 'wallet_switchEthereumChain',
+                    params: [{ chainId: '0x40da' }],
+                });
+            }
+        }
+        catch (e) {
+            console.warn('INFT: Network switch warning:', e?.message || e);
+        }
+        // Get target address from wallet client if available
+        let addr;
+        try {
+            if (signer && typeof signer.getAddresses === 'function') {
+                const addrs = await signer.getAddresses();
+                addr = addrs?.[0];
+            }
+        }
+        catch { }
+        // Resolve signer
+        const ethersSigner = addr ? await provider.getSigner(addr) : await provider.getSigner();
+        return ethersSigner;
+    }
+    throw new Error('No browser wallet provider found. Please open in a browser with MetaMask.');
+}
+// Ensure network and minimal balance for 0G transactions
+async function ensureOGNetworkAndFunds(address) {
+    const provider = new ethers.JsonRpcProvider(OG_RPC_URL);
+    const balance = await provider.getBalance(address);
+    const minBalanceWei = 1000000000000000n; // 0.001 OG
+    if (balance < minBalanceWei) {
+        throw new Error('Insufficient 0G balance (>= 0.001 OG required). Get tokens: https://faucet.0g.ai/');
+    }
+}
 /**
  * Convert a note to INFT with intelligence capabilities
  */
-export async function convertNoteToINFT(note, signer, provider, intelligenceConfig) {
+export async function convertNoteToINFT(note, signer, providerOrConfig, maybeConfig) {
     try {
-        const contract = new ethers.Contract(INFT_CONTRACT_ADDRESS, NOTE3_INFT_ABI, signer);
+        const ethersSigner = await toEthersSigner(signer);
+        const signerAddress = await ethersSigner.getAddress();
+        await ensureOGNetworkAndFunds(signerAddress);
+        const contract = new ethers.Contract(INFT_CONTRACT_ADDRESS, NOTE3_INFT_ABI, ethersSigner);
         // Generate proofs - verifier expects 32-byte data hashes
         // For Note3Verifier, the proof is the data hash itself (32 bytes)
         const contentHash = ethers.keccak256(ethers.toUtf8Bytes(note.id + '-content'));
         const metadataHash = ethers.keccak256(ethers.toUtf8Bytes(note.id + '-metadata'));
         const proofs = [
-            ethers.getBytes(contentHash), // Convert to bytes32
-            ethers.getBytes(metadataHash) // Convert to bytes32
+            ethers.getBytes(contentHash),
+            ethers.getBytes(metadataHash)
         ];
-        // Generate data descriptions
         const dataDescriptions = [
             'Note content',
             'Note metadata'
         ];
-        // Default intelligence configuration
         const defaultIntelligenceConfig = {
             capabilities: ['summary', 'qa', 'translation'],
             modelVersion: '1.0.0',
             memoryRequirement: 512,
             computeUnits: 1000,
             dataSources: [note.id],
-            promptTemplate: `You are an AI assistant for analyzing the note "${note.title || note.id}". Please provide helpful summaries and answer questions about the note content.`,
+            promptTemplate: `You are an AI assistant for analyzing the note ${note.title || note.id}. Provide helpful summaries and answer questions about its content.`,
             isEncrypted: false
         };
-        // Merge with provided config
-        const finalConfig = { ...defaultIntelligenceConfig, ...intelligenceConfig };
-        // Get address from signer (compatible with both ethers signer and wagmi walletClient)
-        let signerAddress;
-        if (typeof signer.getAddress === 'function') {
-            signerAddress = await signer.getAddress();
+        // Determine user-provided intelligence config from flexible args
+        let userConfig;
+        if (maybeConfig) {
+            userConfig = maybeConfig;
         }
-        else if (typeof signer.getAddresses === 'function') {
-            const addresses = await signer.getAddresses();
-            signerAddress = addresses[0];
+        else if (providerOrConfig && typeof providerOrConfig === 'object') {
+            const c = providerOrConfig;
+            if (Array.isArray(c?.capabilities) || 'modelVersion' in c || 'model_version' in c) {
+                userConfig = c;
+            }
         }
-        else if (signer.address) {
-            signerAddress = signer.address;
-        }
-        else {
-            throw new Error('Unable to get address from signer');
-        }
-        // Skip gas estimation since walletClient doesn't support it
-        // Use a reasonable gas limit instead
-        const gasLimit = 500000n; // Reasonable gas limit for minting
+        const finalConfig = { ...defaultIntelligenceConfig, ...(userConfig || {}) };
+        const gasLimit = 500000n;
         console.log('Attempting Note3 INFT mint with noteId:', note.id, 'and gas limit:', gasLimit.toString());
-        // Try Note3 INFT mint with intelligence config
-        const mintTx = await contract.mintNote3INFT(proofs, dataDescriptions, note.id, // Pass the actual note ID
-        signerAddress, finalConfig, // Pass the intelligence configuration
-        {
-            gasLimit: gasLimit
-        });
-        // Wait for transaction confirmation
+        const mintTx = await contract.mintNote3INFT(proofs, dataDescriptions, note.id, signerAddress, finalConfig, { gasLimit });
         let receipt;
         try {
             receipt = await mintTx.wait();
             console.log('Note3 INFT mint successful, receipt:', receipt);
         }
         catch (error) {
-            console.warn('tx.wait() failed, trying alternative method:', error);
-            // Alternative: just use the transaction hash
-            receipt = {
-                hash: mintTx.hash,
-                logs: []
-            };
+            console.warn('tx.wait() failed, using transaction hash only:', error?.message || error);
+            receipt = { hash: mintTx?.hash, logs: [] };
         }
-        // Extract token ID from mint event
-        let tokenId = 1; // Default fallback
+        let tokenId = 1;
         try {
-            const mintEvent = receipt.logs.find((log) => {
+            const mintEvent = receipt?.logs?.find((log) => {
                 try {
-                    const parsed = contract.interface.parseLog(log);
-                    return parsed?.name === 'Minted';
+                    return contract.interface.parseLog(log)?.name === 'Minted';
                 }
                 catch {
                     return false;
@@ -134,10 +163,9 @@ export async function convertNoteToINFT(note, signer, provider, intelligenceConf
             }
         }
         catch (error) {
-            console.warn('Failed to extract token ID from mint event:', error);
+            console.warn('Failed to extract token ID from mint event:', error?.message || error);
         }
-        // Extract transaction hash for return
-        const transactionHash = mintTx.hash || receipt?.hash || 'unknown';
+        const transactionHash = mintTx?.hash || receipt?.hash || 'unknown';
         return {
             inft_token_id: tokenId.toString(),
             inft_contract_address: INFT_CONTRACT_ADDRESS,
@@ -148,8 +176,16 @@ export async function convertNoteToINFT(note, signer, provider, intelligenceConf
         };
     }
     catch (error) {
-        console.error('Error converting note to INFT:', error);
-        throw error;
+        const raw = error?.message || String(error);
+        let hint = '';
+        if (/Transaction failed/i.test(raw) || /-32603/.test(raw)) {
+            hint = 'Transaction reverted. Ensure chain is 16602 and you have >= 0.001 OG.';
+        }
+        else if (/insufficient funds/i.test(raw)) {
+            hint = 'Insufficient funds. Get test tokens at https://faucet.0g.ai/';
+        }
+        console.error('Error converting note to INFT:', raw, hint || '');
+        throw new Error(hint ? `${raw} — ${hint}` : raw);
     }
 }
 /**
@@ -158,9 +194,7 @@ export async function convertNoteToINFT(note, signer, provider, intelligenceConf
 export async function getINFTInfo(tokenId, provider) {
     try {
         const contract = new ethers.Contract(INFT_CONTRACT_ADDRESS, NOTE3_INFT_ABI, provider);
-        // Get basic info first
         const owner = await contract.ownerOf(tokenId);
-        // Try to get additional info, but don't fail if they don't exist
         let tokenURI = '';
         let noteId = tokenId;
         let tokenName = `note3-${tokenId}`;
@@ -196,35 +230,91 @@ export async function getINFTInfo(tokenId, provider) {
         catch (error) {
             console.warn('Failed to get dataDescriptions:', error);
         }
+        // Defaults
+        let intelligence = {
+            capabilities: [],
+            model_version: '1.0.0',
+            compute_requirements: { memory: 0, compute_units: 0 },
+            data_sources: [],
+            prompt_template: ''
+        };
+        let image = '';
+        let description = 'Note converted to INFT';
+        let createdAt = Math.floor(Date.now() / 1000);
+        let attributes = [
+            { trait_type: 'Type', value: 'Note' },
+            { trait_type: 'Note ID', value: noteId },
+            { trait_type: 'Data Hashes', value: dataHashes.length.toString() }
+        ];
+        // Prefer parsing tokenURI if present
+        if (tokenURI && tokenURI.trim().startsWith('{')) {
+            try {
+                const meta = JSON.parse(tokenURI);
+                if (meta?.intelligence) {
+                    intelligence = {
+                        capabilities: Array.isArray(meta.intelligence.capabilities) ? meta.intelligence.capabilities : [],
+                        model_version: String(meta.intelligence.model_version || meta.intelligence.modelVersion || '1.0.0'),
+                        compute_requirements: {
+                            memory: Number(meta.intelligence.compute_requirements?.memory || meta.intelligence.memoryRequirement || 0),
+                            compute_units: Number(meta.intelligence.compute_requirements?.compute_units || meta.intelligence.computeUnits || 0)
+                        },
+                        data_sources: Array.isArray(meta.intelligence.data_sources) ? meta.intelligence.data_sources : (Array.isArray(meta.intelligence.dataSources) ? meta.intelligence.dataSources : []),
+                        prompt_template: String(meta.intelligence.prompt_template || meta.intelligence.promptTemplate || '')
+                    };
+                }
+                if (typeof meta?.image === 'string')
+                    image = meta.image;
+                if (typeof meta?.description === 'string')
+                    description = meta.description;
+                if (Array.isArray(meta?.attributes))
+                    attributes = meta.attributes;
+                if (typeof meta?.created_at === 'number')
+                    createdAt = meta.created_at;
+                if (typeof meta?.name === 'string')
+                    tokenName = meta.name;
+            }
+            catch (e) {
+                console.warn('Failed to parse tokenURI JSON, will fallback to getIntelligenceConfig:', e);
+            }
+        }
+        // Fallback: fetch intelligence config directly
+        if (intelligence.capabilities.length === 0) {
+            try {
+                const cfg = await contract.getIntelligenceConfig(tokenId);
+                intelligence = {
+                    capabilities: Array.isArray(cfg?.capabilities) ? cfg.capabilities : [],
+                    model_version: String(cfg?.modelVersion || '1.0.0'),
+                    compute_requirements: {
+                        memory: Number(cfg?.memoryRequirement || 0),
+                        compute_units: Number(cfg?.computeUnits || 0)
+                    },
+                    data_sources: Array.isArray(cfg?.dataSources) ? cfg.dataSources : [],
+                    prompt_template: String(cfg?.promptTemplate || '')
+                };
+            }
+            catch (e) {
+                console.warn('Failed to get intelligence config:', e);
+            }
+        }
+        // Final UI fallback: if still empty, show default capabilities for better UX
+        if (intelligence.capabilities.length === 0) {
+            intelligence.capabilities = ['summary', 'qa', 'translation'];
+            intelligence.model_version = intelligence.model_version || '1.0.0';
+            intelligence.compute_requirements = intelligence.compute_requirements || { memory: 0, compute_units: 0 };
+        }
         return {
             token_id: tokenId,
             contract_address: INFT_CONTRACT_ADDRESS,
             owner: owner,
-            created_at: Math.floor(Date.now() / 1000),
-            note_reference: {
-                note_id: noteId,
-                note_cid: ''
-            },
+            created_at: createdAt,
+            note_reference: { note_id: noteId, note_cid: '' },
             metadata: {
                 name: tokenName,
-                description: 'Note converted to INFT',
-                image: '',
-                attributes: [
-                    { trait_type: 'Type', value: 'Note' },
-                    { trait_type: 'Note ID', value: noteId },
-                    { trait_type: 'Data Hashes', value: dataHashes.length.toString() }
-                ],
-                intelligence: {
-                    capabilities: [],
-                    model_version: '1.0.0',
-                    compute_requirements: {
-                        memory: 0,
-                        compute_units: 0
-                    },
-                    data_sources: [],
-                    prompt_template: ''
-                },
-                created_at: Math.floor(Date.now() / 1000),
+                description,
+                image,
+                attributes,
+                intelligence,
+                created_at: createdAt,
                 author: owner,
                 note_id: noteId,
                 note_cid: ''
@@ -330,13 +420,52 @@ export async function getContractStandard(provider) {
  */
 export async function generateINFTSummary(tokenId, signer) {
     try {
-        const contract = new ethers.Contract(INFT_CONTRACT_ADDRESS, NOTE3_INFT_ABI, signer);
-        const tx = await contract.generateSummary(tokenId);
+        const ethersSigner = await toEthersSigner(signer);
+        const addr = await ethersSigner.getAddress();
+        await ensureOGNetworkAndFunds(addr);
+        const contract = new ethers.Contract(INFT_CONTRACT_ADDRESS, NOTE3_INFT_ABI, ethersSigner);
+        // Preflight: ensure owner and static call to capture revert reason early
+        try {
+            const owner = await contract.ownerOf(tokenId);
+            if (owner?.toLowerCase() !== addr.toLowerCase()) {
+                throw new Error('Not owner');
+            }
+            // Use provider.call with explicit from to surface revert reasons from the node
+            const provider = ethersSigner.provider;
+            if (!provider)
+                throw new Error('No provider');
+            const calldata = contract.interface.encodeFunctionData('generateSummary', [BigInt(tokenId)]);
+            await provider.call({ to: INFT_CONTRACT_ADDRESS, data: calldata, from: addr });
+        }
+        catch (preErr) {
+            const raw = preErr?.reason || preErr?.message || String(preErr);
+            let hint = '';
+            if (/Not owner/i.test(raw))
+                hint = 'Caller is not the owner of this INFT token.';
+            else if (/Token does not exist/i.test(raw))
+                hint = 'Token ID does not exist on the contract.';
+            throw new Error(hint ? `${raw} — ${hint}` : raw);
+        }
+        const tx = await contract.generateSummary(BigInt(tokenId), { gasLimit: 300000n });
         await tx.wait();
     }
     catch (error) {
-        console.error('Error generating INFT summary:', error);
-        throw error;
+        const raw = error?.message || String(error);
+        let hint = '';
+        if (/Not owner/i.test(raw)) {
+            hint = 'Caller is not the owner of this INFT token.';
+        }
+        else if (/Token does not exist/i.test(raw)) {
+            hint = 'Token ID does not exist on the contract.';
+        }
+        else if (/insufficient funds/i.test(raw)) {
+            hint = 'Insufficient OG balance. Please fund your wallet (>= 0.001 OG).';
+        }
+        else if (/-32603/.test(raw) || /Transaction failed/i.test(raw)) {
+            hint = 'Transaction reverted on 0G Galileo Testnet (chainId 16602).';
+        }
+        console.error('Error generating INFT summary:', raw);
+        throw new Error(hint ? `${raw} — ${hint}` : raw);
     }
 }
 /**
@@ -344,13 +473,30 @@ export async function generateINFTSummary(tokenId, signer) {
  */
 export async function addINFTQAPair(tokenId, question, answer, signer) {
     try {
-        const contract = new ethers.Contract(INFT_CONTRACT_ADDRESS, NOTE3_INFT_ABI, signer);
+        const ethersSigner = await toEthersSigner(signer);
+        const addr = await ethersSigner.getAddress();
+        await ensureOGNetworkAndFunds(addr);
+        const contract = new ethers.Contract(INFT_CONTRACT_ADDRESS, NOTE3_INFT_ABI, ethersSigner);
         const tx = await contract.addQAPair(tokenId, question, answer);
         await tx.wait();
     }
     catch (error) {
-        console.error('Error adding Q&A pair:', error);
-        throw error;
+        const raw = error?.message || String(error);
+        let hint = '';
+        if (/Not owner/i.test(raw)) {
+            hint = 'Caller is not the owner of this INFT token.';
+        }
+        else if (/Token does not exist/i.test(raw)) {
+            hint = 'Token ID does not exist on the contract.';
+        }
+        else if (/insufficient funds/i.test(raw)) {
+            hint = 'Insufficient OG balance. Please fund your wallet (>= 0.001 OG).';
+        }
+        else if (/-32603/.test(raw) || /Transaction failed/i.test(raw)) {
+            hint = 'Transaction reverted on 0G Galileo Testnet (chainId 16602).';
+        }
+        console.error('Error adding Q&A pair:', raw);
+        throw new Error(hint ? `${raw} — ${hint}` : raw);
     }
 }
 /**

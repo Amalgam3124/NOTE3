@@ -2,7 +2,7 @@ import { INFTConversionResult, INFTInfo, INFTIntelligence, Note } from '@onchain
 /**
  * Convert a note to INFT with intelligence capabilities
  */
-export declare function convertNoteToINFT(note: Note, signer: any, provider: any, intelligenceConfig?: Partial<INFTIntelligence>): Promise<INFTConversionResult>;
+export declare function convertNoteToINFT(note: Note, signer: any, providerOrConfig?: any, maybeConfig?: Partial<INFTIntelligence>): Promise<INFTConversionResult>;
 /**
  * Get INFT information
  */

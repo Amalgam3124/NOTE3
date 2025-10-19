@@ -10,16 +10,22 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@0glabs/0g-serving-broker": "^0.5.4",
     "@onchain-notes/sdk": "workspace:*",
     "@onchain-notes/types": "workspace:*",
     "@rainbow-me/rainbowkit": "^2.2.8",
     "@tanstack/react-query": "^5.85.3",
+    "@types/crypto-js": "4.2.2",
     "assert": "^2.1.0",
+    "autoprefixer": "^10.4.16",
     "buffer": "^6.0.3",
     "crypto-browserify": "^3.12.1",
+    "crypto-js": "4.2.0",
+    "ethers": "6",
     "events": "^3.3.0",
-    "next": "14.1.0",
+    "next": "^14.2.0",
     "pino-pretty": "^13.1.1",
+    "postcss": "^8.4.32",
     "process": "^0.11.10",
     "querystring": "^0.2.1",
     "react": "^18.2.0",
@@ -27,8 +33,6 @@
     "react-markdown": "^9.0.1",
     "stream-browserify": "^3.0.0",
     "tailwindcss": "^3.4.0",
-    "autoprefixer": "^10.4.16",
-    "postcss": "^8.4.32",
     "url": "^0.11.4",
     "util": "^0.12.5",
     "viem": "^2.33.3",
@@ -38,7 +42,7 @@
     "@types/node": "^20.11.0",
     "@types/react": "^18.2.0",
     "@types/react-dom": "^18.2.0",
-    "eslint-config-next": "14.1.0",
+    "eslint-config-next": "^14.2.0",
     "typescript": "^5.3.3"
   }
 }
