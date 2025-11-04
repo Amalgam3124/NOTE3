@@ -37,13 +37,21 @@ module.exports = {
       gasPrice: "auto",
       gas: "auto"
     },
+    "0g-mainnet": {
+      url: "https://evmrpc.0g.ai/",
+      chainId: 16661,
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      gasPrice: "auto",
+      gas: "auto"
+    },
     hardhat: {
       chainId: 1337
     }
   },
   etherscan: {
     apiKey: {
-      "0g-testnet": "your-api-key-here" // 0G Chain Scan API key if available
+      "0g-testnet": "your-api-key-here", // 0G Chain Scan API key if available
+      "0g-mainnet": "your-api-key-here"
     },
     customChains: [
       {
@@ -52,6 +60,14 @@ module.exports = {
         urls: {
           apiURL: "https://chainscan-galileo.0g.ai/api",
           browserURL: "https://chainscan-galileo.0g.ai"
+        }
+      },
+      {
+        network: "0g-mainnet",
+        chainId: 16661,
+        urls: {
+          apiURL: "https://chainscan.0g.ai/api",
+          browserURL: "https://chainscan.0g.ai"
         }
       }
     ]

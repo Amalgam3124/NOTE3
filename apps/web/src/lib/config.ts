@@ -3,10 +3,10 @@
 
 export const OG_CONFIG = {
   // RPC endpoint for 0G blockchain
-  RPC_URL: process.env.NEXT_PUBLIC_OG_ENDPOINT || 'https://evmrpc-testnet.0g.ai/',
+  RPC_URL: process.env.NEXT_PUBLIC_OG_ENDPOINT || 'https://evmrpc.0g.ai/',
   
   // Indexer endpoint for 0G Storage
-  INDEXER_RPC: process.env.NEXT_PUBLIC_OG_INDEXER || 'https://indexer-storage-testnet-turbo.0g.ai',
+  INDEXER_RPC: process.env.NEXT_PUBLIC_OG_INDEXER || 'https://indexer-storage-turbo.0g.ai',
   
   // Gateway URL for IPFS-like access
   GATEWAY: process.env.NEXT_PUBLIC_OG_GATEWAY || 'https://gateway.0g.ai/ipfs/',
@@ -29,11 +29,11 @@ export function validateOGConfig() {
   const warnings = [];
   
   if (!process.env.NEXT_PUBLIC_OG_ENDPOINT) {
-    warnings.push('NEXT_PUBLIC_OG_ENDPOINT not set, using default testnet endpoint');
+    warnings.push('NEXT_PUBLIC_OG_ENDPOINT not set, using default mainnet endpoint');
   }
   
   if (!process.env.NEXT_PUBLIC_OG_INDEXER) {
-    warnings.push('NEXT_PUBLIC_OG_INDEXER not set, using default testnet indexer');
+    warnings.push('NEXT_PUBLIC_OG_INDEXER not set, using default mainnet indexer');
   }
   
   if (!process.env.NEXT_PUBLIC_OG_GATEWAY) {

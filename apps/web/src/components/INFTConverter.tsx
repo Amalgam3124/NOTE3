@@ -561,7 +561,7 @@ export default function INFTConverter({ note, onConversionComplete, onError }: I
               <p><strong>Contract:</strong> {conversionResult.inft_contract_address}</p>
               <p><strong>Transaction:</strong> 
                 <a 
-                  href={`https://chainscan-galileo.0g.ai/tx/${conversionResult.transaction_hash}`}
+                  href={`https://chainscan.0g.ai/tx/${conversionResult.transaction_hash}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="ml-1 text-blue-600 hover:underline"

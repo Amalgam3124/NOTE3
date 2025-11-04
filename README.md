@@ -80,16 +80,14 @@ A decentralized note-taking application built on 0G Storage, featuring blockchai
    NEXT_PUBLIC_OG_COMPUTE_PROVIDER_ADDRESS=0x3feE5a4dd5FDb8a32dDA97Bed899830605dBD9D3
    ```
    
-   **Important**: Make sure to update your wallet configuration with the new testnet details:
-   - **Chain ID**: 16602 (updated from 16601)
-   - **Network Name**: 0G Galileo Testnet
-   - **RPC URL**: https://evmrpc-testnet.0g.ai/
-   - **Explorer**: https://chainscan-galileo.0g.ai/
-   - **Faucet**: https://faucet.0g.ai/
+   **Important**: Update your wallet to 0G Mainnet:
+   - **Chain ID**: 16661
+   - **Network Name**: 0G Mainnet
+   - **RPC URL**: https://evmrpc.0g.ai/
+   - **Explorer**: https://chainscan.0g.ai/
 
-4. **Get testnet tokens**
-   - Visit [0G Faucet](https://faucet.0g.ai/)
-   - Request testnet 0G tokens for your wallet
+4. **Ensure mainnet tokens**
+   - Ensure your wallet has sufficient 0G tokens for gas and storage fees
 
 5. **Run the development server**
    ```bash
@@ -259,7 +257,7 @@ NOTE3/
 
 ## 📋 Deployed Contracts
 
-The following smart contracts have been deployed to the 0G Galileo Testnet:
+The following smart contracts are currently deployed on the 0G Galileo Testnet. Mainnet addresses will be published after deployment:
 
 ### Main Contracts
 - **Note3AgentNFT (INFT Contract)**: `0x378Eb988f4cD091dC78ec16DD7fD173b29dD8D04`
@@ -278,12 +276,11 @@ The following smart contracts have been deployed to the 0G Galileo Testnet:
   - **Pattern**: UUPS Proxy pattern
 
 ### Network Information
-- **Network**: 0G Galileo Testnet
-- **Chain ID**: 16602
-- **RPC URL**: https://evmrpc-testnet.0g.ai/
-- **Explorer**: https://chainscan-galileo.0g.ai/
-- **Faucet**: https://faucet.0g.ai/
-- **Deployed**: September 17, 2025
+- **Network**: 0G Mainnet
+- **Chain ID**: 16661
+- **RPC URL**: https://evmrpc.0g.ai/
+- **Explorer**: https://chainscan.0g.ai/
+- **Deployed**: Pending mainnet deployment
 
 ### Contract Verification
 All contracts are verified on the 0G Explorer and can be interacted with using the provided addresses. The contracts implement the ERC-7857 standard for Intelligent NFTs and include full upgradeability support.

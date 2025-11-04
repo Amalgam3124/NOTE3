@@ -18,21 +18,21 @@ async function ensureWalletReady() {
   try {
     const network = await provider.getNetwork();
     const cid = Number(network.chainId);
-    if (cid !== 16602) {
+    if (cid !== 16661) {
       try {
-        await (window as any).ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x40da' }] });
+        await (window as any).ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x4115' }] });
       } catch {
         await (window as any).ethereum.request({
           method: 'wallet_addEthereumChain',
           params: [{
-            chainId: '0x40da',
-            chainName: '0G Galileo Testnet',
-            nativeCurrency: { name: 'OG', symbol: 'OG', decimals: 18 },
-            rpcUrls: ['https://evmrpc-testnet.0g.ai/'],
-            blockExplorerUrls: ['https://chainscan-galileo.0g.ai/'],
+            chainId: '0x4115',
+            chainName: '0G Mainnet',
+            nativeCurrency: { name: '0G', symbol: '0G', decimals: 18 },
+            rpcUrls: ['https://evmrpc.0g.ai/'],
+            blockExplorerUrls: ['https://chainscan.0g.ai/'],
           }],
         });
-        await (window as any).ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x40da' }] });
+        await (window as any).ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x4115' }] });
       }
     }
   } catch {}
@@ -42,7 +42,7 @@ async function ensureWalletReady() {
   const bal = await provider.getBalance(address);
   const min = ethers.parseEther('0.001');
   if (bal < min) {
-    throw new Error('Insufficient balance: need at least 0.001 OG. Get test tokens from https://faucet.0g.ai/.');
+    throw new Error('Insufficient 0G balance on Mainnet (>= 0.001 0G required).');
   }
 
   return { provider, signer, address };

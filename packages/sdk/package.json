@@ -8,11 +8,11 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "compile": "hardhat compile",
-    "deploy": "hardhat run scripts/deploy-note3-agent-nft.js --network 0g-testnet",
+    "deploy": "hardhat run scripts/deploy-note3-agent-nft.js --network 0g-mainnet",
     "deploy:local": "hardhat run scripts/deploy-note3-agent-nft.js --network hardhat",
-    "deploy:old": "hardhat run scripts/deploy-note3-inft.js --network 0g-testnet",
+    "deploy:old": "hardhat run scripts/deploy-note3-inft.js --network 0g-mainnet",
     "test": "hardhat test",
-    "verify": "hardhat verify --network 0g-testnet"
+    "verify": "hardhat verify --network 0g-mainnet"
   },
   "dependencies": {
     "@0glabs/0g-ts-sdk": "^0.3.1",

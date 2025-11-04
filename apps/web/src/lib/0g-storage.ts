@@ -34,12 +34,12 @@ type NoteWithCID = Note & { cid?: string };
 async function ensureOGNetworkAndFunds(signer: any, address: `0x${string}`) {
   try {
     const chainId = (signer?.chain?.id) ?? (typeof signer?.getChainId === 'function' ? await signer.getChainId() : undefined);
-    if (typeof window !== 'undefined' && chainId !== 16602 && (window as any).ethereum) {
+    if (typeof window !== 'undefined' && chainId !== 16661 && (window as any).ethereum) {
       await (window as any).ethereum.request({
         method: 'wallet_switchEthereumChain',
-        params: [{ chainId: '0x40da' }],
+        params: [{ chainId: '0x4115' }],
       });
-      console.log('0G Storage: Switched wallet to 0G Galileo (16602)');
+      console.log('0G Storage: Switched wallet to 0G Mainnet (16661)');
     }
   } catch (switchErr) {
     console.warn('0G Storage: Network switch skipped/failed:', switchErr);
@@ -49,9 +49,9 @@ async function ensureOGNetworkAndFunds(signer: any, address: `0x${string}`) {
   const client = createPublicClient({ transport: http(OG_CONFIG.RPC_URL) });
   const balance = await client.getBalance({ address });
   console.log('0G Storage: Wallet balance (wei):', balance.toString());
-  const minBalanceWei = 1_000_000_000_000_000n; // 0.001 OG
+  const minBalanceWei = 1_000_000_000_000_000n; // 0.001 0G
   if (balance < minBalanceWei) {
-    throw new Error('Insufficient 0G balance (>= 0.001 OG required). Get tokens: https://faucet.0g.ai/');
+    throw new Error('Insufficient 0G balance on Mainnet (>= 0.001 0G required).');
   }
 }
 

@@ -18,7 +18,7 @@ async function main() {
   console.log("💰 Account balance:", ethers.formatEther(balance), "0G");
 
   if (balance === 0n) {
-    console.error("❌ Insufficient balance. Please get testnet tokens from https://faucet.0g.ai/");
+    console.error("❌ Insufficient balance. Please ensure sufficient 0G tokens on mainnet.");
     process.exit(1);
   }
 
@@ -114,8 +114,8 @@ async function main() {
     // Display results
     console.log("\n🎉 Note3 INFT Deployment Complete!");
     console.log("===================================");
-    console.log("Network: 0G Galileo Testnet");
-    console.log("Chain ID: 16602");
+    console.log("Network: 0G Mainnet");
+    console.log("Chain ID: 16661");
     console.log("Note3Verifier:", verifierAddress);
     console.log("Note3INFT:", inftAddress);
 
@@ -124,8 +124,8 @@ async function main() {
     console.log(`NEXT_PUBLIC_VERIFIER_CONTRACT_ADDRESS=${verifierAddress}`);
 
     console.log("\n🔗 View on 0G Chain Scan:");
-    console.log(`Verifier: https://chainscan-galileo.0g.ai/address/${verifierAddress}`);
-    console.log(`INFT: https://chainscan-galileo.0g.ai/address/${inftAddress}`);
+    console.log(`Verifier: https://chainscan.0g.ai/address/${verifierAddress}`);
+    console.log(`INFT: https://chainscan.0g.ai/address/${inftAddress}`);
 
     // Update configuration files
     updateConfig(verifierAddress, inftAddress);

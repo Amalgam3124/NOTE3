@@ -46,8 +46,8 @@ async function main() {
         // 3. Prepare initialization parameters
         const nftName = "Note3";
         const nftSymbol = "NOTE3";
-        const chainURL = "https://evmrpc-testnet.0g.ai";
-        const indexerURL = "https://indexer-storage-testnet-turbo.0g.ai";
+        const chainURL = "https://evmrpc.0g.ai";
+        const indexerURL = "https://indexer-storage-turbo.0g.ai";
 
         // 4. Encode initialization data
         const initData = Note3AgentNFT.interface.encodeFunctionData("initialize", [

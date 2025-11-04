@@ -55,9 +55,9 @@ const NOTE3_INFT_ABI = [
   'event Updated(uint256 indexed tokenId, bytes32[] oldDataHashes, bytes32[] newDataHashes)'
 ];
 
-// Contract address (will be set from environment)
-const INFT_CONTRACT_ADDRESS = '0x378Eb988f4cD091dC78ec16DD7fD173b29dD8D04';
-const OG_RPC_URL = process.env.NEXT_PUBLIC_OG_ENDPOINT || 'https://evmrpc-testnet.0g.ai/';
+// Contract address (will be updated post-deployment)
+const INFT_CONTRACT_ADDRESS = '0x9828a3eE2c401FCCD0716b446a3062fFF14b98fD';
+const OG_RPC_URL = process.env.NEXT_PUBLIC_OG_ENDPOINT || 'https://evmrpc.0g.ai/';
 
 // Ensure the contract address is valid
 if (!INFT_CONTRACT_ADDRESS || !INFT_CONTRACT_ADDRESS.startsWith('0x')) {
@@ -75,13 +75,13 @@ async function toEthersSigner(signer: any): Promise<ethers.Signer> {
   if (typeof window !== 'undefined' && (window as any).ethereum) {
     const provider = new ethers.BrowserProvider((window as any).ethereum);
 
-    // Try to switch to 0G Galileo Testnet if needed
+    // Try to switch to 0G Mainnet if needed
     try {
       const network = await provider.getNetwork();
-      if (Number(network.chainId) !== 16602) {
+      if (Number(network.chainId) !== 16661) {
         await (window as any).ethereum.request({
           method: 'wallet_switchEthereumChain',
-          params: [{ chainId: '0x40da' }],
+          params: [{ chainId: '0x4115' }],
         });
       }
     } catch (e) {
@@ -111,7 +111,7 @@ async function ensureOGNetworkAndFunds(address: `0x${string}`) {
   const balance = await provider.getBalance(address);
   const minBalanceWei = 1_000_000_000_000_000n; // 0.001 OG
   if (balance < minBalanceWei) {
-    throw new Error('Insufficient 0G balance (>= 0.001 OG required). Get tokens: https://faucet.0g.ai/');
+    throw new Error('Insufficient 0G balance (>= 0.001 OG required) on mainnet.');
   }
 }
 
@@ -371,12 +371,12 @@ export async function getOwnedINFTs(
           const rpcUrl = chain.rpcUrls.default.http[0];
           contractProvider = new ethers.JsonRpcProvider(rpcUrl);
         } else {
-          // Fallback: use a default provider
-          contractProvider = new ethers.JsonRpcProvider('https://evmrpc-testnet.0g.ai/');
+          // Fallback: use a default provider (0G Mainnet)
+          contractProvider = new ethers.JsonRpcProvider('https://evmrpc.0g.ai/');
         }
       } catch (error) {
         console.warn('Failed to create provider, using fallback:', error);
-        contractProvider = new ethers.JsonRpcProvider('https://evmrpc-testnet.0g.ai/');
+        contractProvider = new ethers.JsonRpcProvider('https://evmrpc.0g.ai/');
       }
     }
     

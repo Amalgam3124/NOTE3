@@ -90,15 +90,15 @@ export default function INFTInteractionPage({ params }: { params: { tokenId: str
   async function getSignerEnsured() {
     if (typeof window === 'undefined') throw new Error('Browser environment required');
     const provider = new ethers.BrowserProvider((window as any).ethereum);
-    // Ensure chain 16602
+    // Ensure chain 16661 (0G Mainnet)
     try {
       const network = await provider.getNetwork();
       const cid = Number(network.chainId);
-      if (cid !== 16602) {
+      if (cid !== 16661) {
         try {
           await (window as any).ethereum.request({
             method: 'wallet_switchEthereumChain',
-            params: [{ chainId: '0x40da' }],
+            params: [{ chainId: '0x4115' }],
           });
         } catch (switchErr: any) {
           // Try to add chain then switch
@@ -106,20 +106,20 @@ export default function INFTInteractionPage({ params }: { params: { tokenId: str
             await (window as any).ethereum.request({
               method: 'wallet_addEthereumChain',
               params: [{
-                chainId: '0x40da',
-                chainName: '0G Galileo Testnet',
-                nativeCurrency: { name: 'OG', symbol: 'OG', decimals: 18 },
-                rpcUrls: ['https://evmrpc-testnet.0g.ai/'],
-                blockExplorerUrls: ['https://chainscan-galileo.0g.ai/'],
+                chainId: '0x4115',
+                chainName: '0G Mainnet',
+                nativeCurrency: { name: '0G', symbol: '0G', decimals: 18 },
+                rpcUrls: ['https://evmrpc.0g.ai/'],
+                blockExplorerUrls: ['https://chainscan.0g.ai/'],
               }],
             });
             await (window as any).ethereum.request({
               method: 'wallet_switchEthereumChain',
-              params: [{ chainId: '0x40da' }],
+              params: [{ chainId: '0x4115' }],
             });
           } catch (addErr) {
             console.warn('Failed to add/switch chain:', addErr);
-            throw new Error('Please switch to 0G Galileo Testnet (16602).');
+            throw new Error('Please switch to 0G Mainnet (16661).');
           }
         }
       }
@@ -132,7 +132,7 @@ export default function INFTInteractionPage({ params }: { params: { tokenId: str
     const bal = await provider.getBalance(addr);
     const min = ethers.parseEther('0.001');
     if (bal < min) {
-      throw new Error('Insufficient balance: need at least 0.001 OG. Get test tokens from https://faucet.0g.ai/.');
+      throw new Error('Insufficient 0G balance on Mainnet (>= 0.001 0G required).');
     }
     return signer;
   }
